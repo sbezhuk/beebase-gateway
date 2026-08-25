@@ -106,11 +106,14 @@ services:
       LOG_LEVEL: info
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://beebase:beebase@apiary-postgres:5432/beebase_apiary?sslmode=disable
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
     depends_on:
       apiary-postgres:
         condition: service_healthy
       apiary-migrate:
         condition: service_completed_successfully
+      auth-service:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 5s
@@ -157,11 +160,17 @@ services:
       LOG_LEVEL: info
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://beebase:beebase@hive-postgres:5432/beebase_hive?sslmode=disable
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      APIARY_SERVICE_URL: http://apiary-service:8080
     depends_on:
       hive-postgres:
         condition: service_healthy
       hive-migrate:
         condition: service_completed_successfully
+      auth-service:
+        condition: service_healthy
+      apiary-service:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 5s
