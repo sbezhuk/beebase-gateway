@@ -217,11 +217,17 @@ services:
       LOG_LEVEL: info
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://beebase:beebase@inspection-postgres:5432/beebase_inspection?sslmode=disable
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      HIVE_SERVICE_URL: http://hive-service:8080
     depends_on:
       inspection-postgres:
         condition: service_healthy
       inspection-migrate:
         condition: service_completed_successfully
+      auth-service:
+        condition: service_healthy
+      hive-service:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 5s

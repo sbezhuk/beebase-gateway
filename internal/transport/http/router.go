@@ -46,8 +46,15 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	r.Handle("/api/v1/auth/*", up.Auth)
 	r.Handle("/.well-known/jwks.json", up.Auth)
 	r.Handle("/api/v1/apiaries/*", up.Apiary)
-	r.Handle("/api/v1/hives/*", up.Hive)
 	r.Handle("/api/v1/inspections/*", up.Inspection)
+
+	// More specific than the "/api/v1/hives/*" wildcard below (chi
+	// resolves by specificity, not registration order, so this always
+	// wins for this one path shape): listing inspections for a hive is
+	// inspection-service's endpoint, not hive-service's, even though it's
+	// nested under /hives/.
+	r.Get("/api/v1/hives/{hiveID}/inspections", up.Inspection.ServeHTTP)
+	r.Handle("/api/v1/hives/*", up.Hive)
 
 	return r
 }
