@@ -3,8 +3,8 @@
 #
 # Requires every service repo cloned as a sibling of this one, using its
 # GitHub repo name as the directory name:
-#   beebase-auth-service/  beebase-apiary-service/
-#   beebase-hive-service/  beebase-inspection-service/  beebase-gateway/ (this repo)
+#   beebase-auth-service/  beebase-apiary-service/  beebase-hive-service/
+#   beebase-inspection-service/  beebase-media-service/  beebase-gateway/ (this repo)
 #
 # Each service keeps its own standalone docker-compose.yml for solo
 # development; this one is only for running the full stack together.
@@ -234,6 +234,66 @@ services:
       timeout: 3s
       retries: 10
 
+  # --- media-service ---
+
+  media-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: beebase
+      POSTGRES_PASSWORD: beebase
+      POSTGRES_DB: beebase_media
+    ports:
+      - "5436:5432"
+    volumes:
+      - beebase_media_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beebase -d beebase_media"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  media-migrate:
+    image: migrate/migrate:v4.19.0
+    depends_on:
+      media-postgres:
+        condition: service_healthy
+    volumes:
+      - ../beebase-media-service/migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://beebase:beebase@media-postgres:5432/beebase_media?sslmode=disable
+      - up
+
+  media-service:
+    build:
+      context: ../beebase-media-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://beebase:beebase@media-postgres:5432/beebase_media?sslmode=disable
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      APIARY_SERVICE_URL: http://apiary-service:8080
+      HIVE_SERVICE_URL: http://hive-service:8080
+    depends_on:
+      media-postgres:
+        condition: service_healthy
+      media-migrate:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_healthy
+      apiary-service:
+        condition: service_healthy
+      hive-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # --- gateway ---
 
   gateway:
@@ -248,6 +308,7 @@ services:
       APIARY_SERVICE_URL: http://apiary-service:8080
       HIVE_SERVICE_URL: http://hive-service:8080
       INSPECTION_SERVICE_URL: http://inspection-service:8080
+      MEDIA_SERVICE_URL: http://media-service:8080
     ports:
       - "8080:8080"
     depends_on:
@@ -259,9 +320,12 @@ services:
         condition: service_healthy
       inspection-service:
         condition: service_healthy
+      media-service:
+        condition: service_healthy
 
 volumes:
   beebase_auth_postgres_data:
   beebase_apiary_postgres_data:
   beebase_hive_postgres_data:
   beebase_inspection_postgres_data:
+  beebase_media_postgres_data:

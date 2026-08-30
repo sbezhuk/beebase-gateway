@@ -19,6 +19,7 @@ type Upstreams struct {
 	Apiary     http.Handler
 	Hive       http.Handler
 	Inspection http.Handler
+	Media      http.Handler
 }
 
 type statusResponse struct {
@@ -55,6 +56,7 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	// under /hives/.
 	r.Get("/api/v1/hives/{hiveID}/inspections", up.Inspection.ServeHTTP)
 	r.Mount("/api/v1/hives", up.Hive)
+	r.Mount("/api/v1/media", up.Media)
 
 	return r
 }

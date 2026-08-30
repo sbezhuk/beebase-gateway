@@ -27,6 +27,7 @@ type Config struct {
 	ApiaryServiceURL     string
 	HiveServiceURL       string
 	InspectionServiceURL string
+	MediaServiceURL      string
 }
 
 // Load builds a Config from environment variables, falling back to
@@ -47,6 +48,7 @@ func Load() (*Config, error) {
 		ApiaryServiceURL:     getEnv("APIARY_SERVICE_URL", ""),
 		HiveServiceURL:       getEnv("HIVE_SERVICE_URL", ""),
 		InspectionServiceURL: getEnv("INSPECTION_SERVICE_URL", ""),
+		MediaServiceURL:      getEnv("MEDIA_SERVICE_URL", ""),
 	}
 
 	required := []struct{ name, value string }{
@@ -54,6 +56,7 @@ func Load() (*Config, error) {
 		{"APIARY_SERVICE_URL", cfg.ApiaryServiceURL},
 		{"HIVE_SERVICE_URL", cfg.HiveServiceURL},
 		{"INSPECTION_SERVICE_URL", cfg.InspectionServiceURL},
+		{"MEDIA_SERVICE_URL", cfg.MediaServiceURL},
 	}
 	for _, r := range required {
 		if r.value == "" {

@@ -13,6 +13,7 @@ database, and no state of its own.
 | apiary-service | [beebase-apiary-service](https://github.com/sbezhuk/beebase-apiary-service) | apiaries |
 | hive-service | [beebase-hive-service](https://github.com/sbezhuk/beebase-hive-service) | hives |
 | inspection-service | [beebase-inspection-service](https://github.com/sbezhuk/beebase-inspection-service) | inspections |
+| media-service | [beebase-media-service](https://github.com/sbezhuk/beebase-media-service) | file/media uploads (photos, PDFs, XML, etc.), generically attached to an apiary or a hive |
 | gateway (this repo) | `beebase-gateway` | single entry point, routes to the above |
 
 [beebase-common](https://github.com/sbezhuk/beebase-common) is a shared Go
@@ -33,6 +34,7 @@ service already routes its own full path:
 | `/api/v1/hives/{hiveId}/inspections` | inspection-service (checked before the `/api/v1/hives/*` wildcard below, since it'd otherwise match too) |
 | `/api/v1/hives/*` | hive-service |
 | `/api/v1/inspections/*` | inspection-service |
+| `/api/v1/media/*` | media-service |
 | `/health`, `/ready` | answered by the gateway itself (it has no dependencies of its own to check) |
 
 ### Trust model
@@ -56,6 +58,7 @@ git clone https://github.com/sbezhuk/beebase-auth-service.git
 git clone https://github.com/sbezhuk/beebase-apiary-service.git
 git clone https://github.com/sbezhuk/beebase-hive-service.git
 git clone https://github.com/sbezhuk/beebase-inspection-service.git
+git clone https://github.com/sbezhuk/beebase-media-service.git
 # beebase-gateway is this repo
 ```
 
@@ -104,6 +107,7 @@ is listening (see `.env.example`), then `make run`.
 | `APIARY_SERVICE_URL` | *(required)* | Base URL of apiary-service |
 | `HIVE_SERVICE_URL` | *(required)* | Base URL of hive-service |
 | `INSPECTION_SERVICE_URL` | *(required)* | Base URL of inspection-service |
+| `MEDIA_SERVICE_URL` | *(required)* | Base URL of media-service |
 
 ## Project structure
 
