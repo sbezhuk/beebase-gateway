@@ -43,7 +43,10 @@ services:
 
   auth-service:
     build:
-      context: ../beebase-auth-service
+      # Repo root, so the build can also see the sibling beebase-common
+      # module that go.mod's replace directive points at.
+      context: ..
+      dockerfile: beebase-auth-service/Dockerfile
     restart: unless-stopped
     environment:
       APP_ENV: production
