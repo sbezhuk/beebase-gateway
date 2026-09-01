@@ -110,6 +110,16 @@ services:
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://beebase:beebase@apiary-postgres:5432/beebase_apiary?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      # Deleting an apiary cascades to its hives and media. hive-service
+      # and media-service are not added to depends_on below: each already
+      # depends on apiary-service (for its own ownership verifier), so the
+      # reverse would be a dependency cycle, which Compose disallows. A
+      # delete request in the first few seconds after a fresh
+      # `docker compose up`, before those services are healthy, may
+      # transiently fail - acceptable given the abort-on-failure cascade
+      # semantics, and no real traffic hits this during that window.
+      HIVE_SERVICE_URL: http://hive-service:8080
+      MEDIA_SERVICE_URL: http://media-service:8080
     depends_on:
       apiary-postgres:
         condition: service_healthy
@@ -165,6 +175,14 @@ services:
       DATABASE_URL: postgres://beebase:beebase@hive-postgres:5432/beebase_hive?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       APIARY_SERVICE_URL: http://apiary-service:8080
+      # Deleting a hive cascades to its inspections and media.
+      # inspection-service and media-service are not added to depends_on
+      # below: each already depends on hive-service (for its own
+      # ownership verifier), so the reverse would be a dependency cycle,
+      # which Compose disallows. See the matching comment on
+      # apiary-service above for the runtime tradeoff this implies.
+      INSPECTION_SERVICE_URL: http://inspection-service:8080
+      MEDIA_SERVICE_URL: http://media-service:8080
     depends_on:
       hive-postgres:
         condition: service_healthy
