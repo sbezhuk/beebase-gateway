@@ -296,18 +296,12 @@ services:
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://beebase:beebase@media-postgres:5432/beebase_media?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
-      APIARY_SERVICE_URL: http://apiary-service:8080
-      HIVE_SERVICE_URL: http://hive-service:8080
     depends_on:
       media-postgres:
         condition: service_healthy
       media-migrate:
         condition: service_completed_successfully
       auth-service:
-        condition: service_healthy
-      apiary-service:
-        condition: service_healthy
-      hive-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
