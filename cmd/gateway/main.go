@@ -50,6 +50,7 @@ func run() error {
 		"hive-service":       cfg.HiveServiceURL,
 		"inspection-service": cfg.InspectionServiceURL,
 		"media-service":      cfg.MediaServiceURL,
+		"statistics-service": cfg.StatisticsServiceURL,
 	}
 	proxies := make(map[string]http.Handler, len(upstreams))
 	for name, target := range upstreams {
@@ -66,6 +67,7 @@ func run() error {
 		Hive:       proxies["hive-service"],
 		Inspection: proxies["inspection-service"],
 		Media:      proxies["media-service"],
+		Statistics: proxies["statistics-service"],
 	})
 
 	srv := server.New(server.Config{

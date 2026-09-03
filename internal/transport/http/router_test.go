@@ -20,17 +20,19 @@ func (s *stubUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func newTestRouter() (http.Handler, *stubUpstream, *stubUpstream) {
+func newTestRouter() (http.Handler, *stubUpstream, *stubUpstream, *stubUpstream) {
 	media := &stubUpstream{}
 	hive := &stubUpstream{}
+	statistics := &stubUpstream{}
 	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), Upstreams{
 		Auth:       &stubUpstream{},
 		Apiary:     &stubUpstream{},
 		Hive:       hive,
 		Inspection: &stubUpstream{},
 		Media:      media,
+		Statistics: statistics,
 	})
-	return r, media, hive
+	return r, media, hive, statistics
 }
 
 // TestInternalOnlyRoutesAreBlocked locks in the fix: an external client
@@ -51,7 +53,7 @@ func TestInternalOnlyRoutesAreBlocked(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			router, media, hive := newTestRouter()
+			router, media, hive, _ := newTestRouter()
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()
@@ -85,11 +87,12 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 		{"hive create", http.MethodPost, "/api/v1/hives", "hive"},
 		{"hive list", http.MethodGet, "/api/v1/hives", "hive"},
 		{"hive update", http.MethodPut, "/api/v1/hives/11111111-1111-1111-1111-111111111111", "hive"},
+		{"statistics overview", http.MethodGet, "/api/v1/statistics/overview", "statistics"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			router, media, hive := newTestRouter()
+			router, media, hive, statistics := newTestRouter()
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()
@@ -107,6 +110,10 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 			case "hive":
 				if !hive.called {
 					t.Error("expected the request to reach hive-service")
+				}
+			case "statistics":
+				if !statistics.called {
+					t.Error("expected the request to reach statistics-service")
 				}
 			}
 		})

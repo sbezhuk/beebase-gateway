@@ -28,6 +28,7 @@ type Config struct {
 	HiveServiceURL       string
 	InspectionServiceURL string
 	MediaServiceURL      string
+	StatisticsServiceURL string
 }
 
 // Load builds a Config from environment variables, falling back to
@@ -49,6 +50,7 @@ func Load() (*Config, error) {
 		HiveServiceURL:       getEnv("HIVE_SERVICE_URL", ""),
 		InspectionServiceURL: getEnv("INSPECTION_SERVICE_URL", ""),
 		MediaServiceURL:      getEnv("MEDIA_SERVICE_URL", ""),
+		StatisticsServiceURL: getEnv("STATISTICS_SERVICE_URL", ""),
 	}
 
 	required := []struct{ name, value string }{
@@ -57,6 +59,7 @@ func Load() (*Config, error) {
 		{"HIVE_SERVICE_URL", cfg.HiveServiceURL},
 		{"INSPECTION_SERVICE_URL", cfg.InspectionServiceURL},
 		{"MEDIA_SERVICE_URL", cfg.MediaServiceURL},
+		{"STATISTICS_SERVICE_URL", cfg.StatisticsServiceURL},
 	}
 	for _, r := range required {
 		if r.value == "" {

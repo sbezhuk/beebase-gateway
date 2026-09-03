@@ -67,6 +67,7 @@ type Upstreams struct {
 	Hive       http.Handler
 	Inspection http.Handler
 	Media      http.Handler
+	Statistics http.Handler
 }
 
 type statusResponse struct {
@@ -108,6 +109,7 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 		methodPath{http.MethodDelete, "/api/v1/media"},
 		methodPath{http.MethodPost, attachPath},
 	))
+	r.Mount("/api/v1/statistics", up.Statistics)
 
 	return r
 }
