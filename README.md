@@ -31,6 +31,7 @@ service already routes its own full path:
 |---|---|
 | `/api/v1/auth/*` | auth-service |
 | `/.well-known/jwks.json` | auth-service |
+| `/api/v1/profile` | auth-service |
 | `/api/v1/apiaries/*` | apiary-service |
 | `/api/v1/hives/{hiveId}/inspections` | inspection-service (checked before the `/api/v1/hives/*` wildcard below, since it'd otherwise match too) |
 | `/api/v1/hives/*` | hive-service |

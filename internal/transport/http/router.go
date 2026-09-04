@@ -94,6 +94,10 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 
 	r.Mount("/api/v1/auth", up.Auth)
 	r.Handle("/.well-known/jwks.json", up.Auth)
+	// Profile lives in auth-service too - it's the same users table, just
+	// a different route namespace - so it shares auth-service's upstream
+	// rather than needing one of its own.
+	r.Mount("/api/v1/profile", up.Auth)
 	r.Mount("/api/v1/apiaries", up.Apiary)
 	r.Mount("/api/v1/inspections", up.Inspection)
 

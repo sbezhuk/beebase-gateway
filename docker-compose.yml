@@ -59,6 +59,17 @@ services:
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?set JWT_PRIVATE_KEY in .env, see beebase-auth-service's make keygen}
       ACCESS_TOKEN_TTL: 15m
       REFRESH_TOKEN_TTL: 720h
+      # Required: base64 32-byte AES-256 key encrypting TOTP (2FA) secrets
+      # at rest. Generate with: openssl rand -base64 32
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set TOTP_ENCRYPTION_KEY in .env, see beebase-auth-service's .env.example}
+      TOTP_ISSUER: BeeBase
+      # Updating a profile's avatar asks media-service to verify
+      # ownership of the referenced media id. media-service isn't added
+      # to depends_on below: it already depends on auth-service (for its
+      # own AUTH_JWKS_URL), so the reverse would be a dependency cycle,
+      # which Compose disallows. See the matching comment on
+      # apiary-service/hive-service below for the same tradeoff.
+      MEDIA_SERVICE_URL: http://media-service:8080
     depends_on:
       auth-postgres:
         condition: service_healthy

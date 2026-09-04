@@ -20,19 +20,20 @@ func (s *stubUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func newTestRouter() (http.Handler, *stubUpstream, *stubUpstream, *stubUpstream) {
+func newTestRouter() (http.Handler, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream) {
+	auth := &stubUpstream{}
 	media := &stubUpstream{}
 	hive := &stubUpstream{}
 	statistics := &stubUpstream{}
 	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), Upstreams{
-		Auth:       &stubUpstream{},
+		Auth:       auth,
 		Apiary:     &stubUpstream{},
 		Hive:       hive,
 		Inspection: &stubUpstream{},
 		Media:      media,
 		Statistics: statistics,
 	})
-	return r, media, hive, statistics
+	return r, auth, media, hive, statistics
 }
 
 // TestInternalOnlyRoutesAreBlocked locks in the fix: an external client
@@ -53,7 +54,7 @@ func TestInternalOnlyRoutesAreBlocked(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			router, media, hive, _ := newTestRouter()
+			router, _, media, hive, _ := newTestRouter()
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()
@@ -88,11 +89,13 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 		{"hive list", http.MethodGet, "/api/v1/hives", "hive"},
 		{"hive update", http.MethodPut, "/api/v1/hives/11111111-1111-1111-1111-111111111111", "hive"},
 		{"statistics overview", http.MethodGet, "/api/v1/statistics/overview", "statistics"},
+		{"profile get", http.MethodGet, "/api/v1/profile", "auth"},
+		{"profile update", http.MethodPut, "/api/v1/profile", "auth"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			router, media, hive, statistics := newTestRouter()
+			router, auth, media, hive, statistics := newTestRouter()
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()
@@ -103,6 +106,10 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 			}
 
 			switch tc.reaches {
+			case "auth":
+				if !auth.called {
+					t.Error("expected the request to reach auth-service")
+				}
 			case "media":
 				if !media.called {
 					t.Error("expected the request to reach media-service")
