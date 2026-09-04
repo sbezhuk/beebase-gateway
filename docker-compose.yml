@@ -114,7 +114,10 @@ services:
 
   apiary-service:
     build:
-      context: ../beebase-apiary-service
+      # Repo root, so the build can also see the sibling beebase-common
+      # module that go.mod's replace directive points at.
+      context: ..
+      dockerfile: beebase-apiary-service/Dockerfile
     restart: unless-stopped
     environment:
       APP_ENV: production
@@ -182,7 +185,10 @@ services:
 
   hive-service:
     build:
-      context: ../beebase-hive-service
+      # Repo root, so the build can also see the sibling beebase-common
+      # module that go.mod's replace directive points at.
+      context: ..
+      dockerfile: beebase-hive-service/Dockerfile
     restart: unless-stopped
     environment:
       APP_ENV: production
@@ -308,7 +314,10 @@ services:
 
   media-service:
     build:
-      context: ../beebase-media-service
+      # Repo root, so the build can also see the sibling beebase-common
+      # module that go.mod's replace directive points at.
+      context: ..
+      dockerfile: beebase-media-service/Dockerfile
     restart: unless-stopped
     environment:
       APP_ENV: production
