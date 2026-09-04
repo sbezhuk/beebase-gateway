@@ -132,6 +132,10 @@ services:
       # semantics, and no real traffic hits this during that window.
       HIVE_SERVICE_URL: http://hive-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
+      # Handed to clients as part of each image's image_url, so - unlike
+      # every *_SERVICE_URL above - this must stay the gateway's own
+      # externally reachable address, not an in-network hostname.
+      PUBLIC_BASE_URL: http://localhost:8080
     depends_on:
       apiary-postgres:
         condition: service_healthy
@@ -195,6 +199,10 @@ services:
       # apiary-service above for the runtime tradeoff this implies.
       INSPECTION_SERVICE_URL: http://inspection-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
+      # Handed to clients as part of each image's image_url, so - unlike
+      # every *_SERVICE_URL above - this must stay the gateway's own
+      # externally reachable address, not an in-network hostname.
+      PUBLIC_BASE_URL: http://localhost:8080
     depends_on:
       hive-postgres:
         condition: service_healthy
@@ -308,6 +316,10 @@ services:
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://beebase:beebase@media-postgres:5432/beebase_media?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      # Handed to clients as part of each media item's image_url, so -
+      # unlike the AUTH_JWKS_URL above - this must be the gateway's own
+      # externally reachable address, not an in-network hostname.
+      PUBLIC_BASE_URL: http://localhost:8080
       # Required: file content is stored in Cloudflare R2, not the
       # database - see beebase-media-service's README Storage section.
       # Set these in .env; there's no local/in-memory fallback.
