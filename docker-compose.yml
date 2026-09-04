@@ -308,6 +308,13 @@ services:
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://beebase:beebase@media-postgres:5432/beebase_media?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      # Required: file content is stored in Cloudflare R2, not the
+      # database - see beebase-media-service's README Storage section.
+      # Set these in .env; there's no local/in-memory fallback.
+      R2_ENDPOINT: ${R2_ENDPOINT:?set R2_ENDPOINT in .env, see beebase-media-service's .env.example}
+      R2_BUCKET: ${R2_BUCKET:?set R2_BUCKET in .env, see beebase-media-service's .env.example}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?set R2_ACCESS_KEY_ID in .env, see beebase-media-service's .env.example}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?set R2_SECRET_ACCESS_KEY in .env, see beebase-media-service's .env.example}
     depends_on:
       media-postgres:
         condition: service_healthy
