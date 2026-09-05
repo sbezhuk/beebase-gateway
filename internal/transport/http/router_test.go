@@ -20,20 +20,21 @@ func (s *stubUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func newTestRouter() (http.Handler, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream) {
+func newTestRouter() (http.Handler, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream) {
 	auth := &stubUpstream{}
+	apiary := &stubUpstream{}
 	media := &stubUpstream{}
 	hive := &stubUpstream{}
 	statistics := &stubUpstream{}
 	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), Upstreams{
 		Auth:       auth,
-		Apiary:     &stubUpstream{},
+		Apiary:     apiary,
 		Hive:       hive,
 		Inspection: &stubUpstream{},
 		Media:      media,
 		Statistics: statistics,
 	})
-	return r, auth, media, hive, statistics
+	return r, auth, apiary, media, hive, statistics
 }
 
 // TestInternalOnlyRoutesAreBlocked locks in the fix: an external client
@@ -49,12 +50,14 @@ func TestInternalOnlyRoutesAreBlocked(t *testing.T) {
 	}{
 		{"media attach", http.MethodPost, "/api/v1/media/11111111-1111-1111-1111-111111111111/attach"},
 		{"media DeleteByOwner", http.MethodDelete, "/api/v1/media"},
+		{"media DeleteMine", http.MethodDelete, "/api/v1/media/mine"},
 		{"hive DeleteByApiary", http.MethodDelete, "/api/v1/hives"},
+		{"apiary DeleteAllMine", http.MethodDelete, "/api/v1/apiaries"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			router, _, media, hive, _ := newTestRouter()
+			router, _, apiary, media, hive, _ := newTestRouter()
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()
@@ -63,7 +66,7 @@ func TestInternalOnlyRoutesAreBlocked(t *testing.T) {
 			if rec.Code != http.StatusNotFound {
 				t.Errorf("expected 404, got %d", rec.Code)
 			}
-			if media.called || hive.called {
+			if apiary.called || media.called || hive.called {
 				t.Errorf("request reached the upstream service; it must be blocked at the gateway")
 			}
 		})
@@ -88,14 +91,18 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 		{"hive create", http.MethodPost, "/api/v1/hives", "hive"},
 		{"hive list", http.MethodGet, "/api/v1/hives", "hive"},
 		{"hive update", http.MethodPut, "/api/v1/hives/11111111-1111-1111-1111-111111111111", "hive"},
+		{"apiary create", http.MethodPost, "/api/v1/apiaries", "apiary"},
+		{"apiary list", http.MethodGet, "/api/v1/apiaries", "apiary"},
+		{"apiary delete by id", http.MethodDelete, "/api/v1/apiaries/11111111-1111-1111-1111-111111111111", "apiary"},
 		{"statistics overview", http.MethodGet, "/api/v1/statistics/overview", "statistics"},
 		{"profile get", http.MethodGet, "/api/v1/profile", "auth"},
 		{"profile update", http.MethodPut, "/api/v1/profile", "auth"},
+		{"profile delete", http.MethodDelete, "/api/v1/profile", "auth"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			router, auth, media, hive, statistics := newTestRouter()
+			router, auth, apiary, media, hive, statistics := newTestRouter()
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()
@@ -109,6 +116,10 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 			case "auth":
 				if !auth.called {
 					t.Error("expected the request to reach auth-service")
+				}
+			case "apiary":
+				if !apiary.called {
+					t.Error("expected the request to reach apiary-service")
 				}
 			case "media":
 				if !media.called {

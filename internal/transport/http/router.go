@@ -98,7 +98,7 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	// a different route namespace - so it shares auth-service's upstream
 	// rather than needing one of its own.
 	r.Mount("/api/v1/profile", up.Auth)
-	r.Mount("/api/v1/apiaries", up.Apiary)
+	r.Mount("/api/v1/apiaries", blockInternalOnly(up.Apiary, methodPath{http.MethodDelete, "/api/v1/apiaries"}))
 	r.Mount("/api/v1/inspections", up.Inspection)
 
 	// More specific than the "/api/v1/hives" mount below (chi resolves by
@@ -111,6 +111,7 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	r.Mount("/api/v1/hives", blockInternalOnly(up.Hive, methodPath{http.MethodDelete, "/api/v1/hives"}))
 	r.Mount("/api/v1/media", blockInternalOnly(up.Media,
 		methodPath{http.MethodDelete, "/api/v1/media"},
+		methodPath{http.MethodDelete, "/api/v1/media/mine"},
 		methodPath{http.MethodPost, attachPath},
 	))
 	r.Mount("/api/v1/statistics", up.Statistics)
