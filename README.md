@@ -136,9 +136,13 @@ commit, as the unit that gets deployed.
 ### Per-service image tags
 
 Each service repo has its own `.github/workflows/ci.yml`
-(`Test → Build → push`, triggered on push to `main`) that tags its
+(`Test → Build → push`, triggered only by pushing a Git tag matching
+`v*` — never by a push to `main` or any other branch) that tags its
 image with its own full Git commit SHA (`${{ github.sha }}`) — never
-`latest`, never a SHA belonging to a different repository:
+the tag name, never `latest`, never a SHA belonging to a different
+repository. Each run ends with a GitHub Actions summary that prints the
+commit SHA in full, ready to paste into the production release
+workflow's inputs below:
 
 ```text
 beebase-gateway:5a066d9...
@@ -165,6 +169,24 @@ variable per service (`GATEWAY_IMAGE_TAG`, `AUTH_IMAGE_TAG`,
 `MEDIA_IMAGE_TAG`, `STATISTICS_IMAGE_TAG`), all required with no
 default. Migration images use the same variable, suffixed `-migrate`
 (e.g. `${AUTH_IMAGE_TAG}-migrate`).
+
+### Deployment bundle (beebase-gateway only)
+
+After beebase-gateway's own image push, its `ci.yml` also tars up
+[docker-compose.prod.yml](docker-compose.prod.yml) and [deploy/](deploy/)
+exactly as they exist at that commit — no `.env`, no secrets — and
+uploads it, via the same OIDC-assumed CI role, to:
+
+```text
+s3://beebase-production-976033326057/deploy-bundles/<commit-sha>/bundle.tar.gz
+```
+
+This is the exact bucket/prefix `terraform/modules/ec2-instance`'s
+`user_data.sh.tftpl` already downloads from at boot
+(`deployment_bundle_bucket` / `deployment_bundle_version` in
+`terraform.tfvars`) — the CI job only ever gets `s3:PutObject` on this
+one prefix, nothing broader. Like the Docker image, the object key is
+the immutable commit SHA, never the tag name, and is never overwritten.
 
 ### Release manifests
 
@@ -340,10 +362,13 @@ checks structurally: `actionlint .github/workflows/*.yml`.
   `token.actions.githubusercontent.com` (thumbprint fetched live via the
   `tls` provider, not hardcoded).
 - **`<name_prefix>-github-actions-ci`** — assumable only by a workflow
-  run on `main` in one of the 7 service repos
-  (`repo:<org>/<repo>:ref:refs/heads/main`). Permissions: ECR
-  authenticate + push, scoped to the 7 BeeBase ECR repository ARNs.
-  Nothing else.
+  run from a pushed `v*` tag in one of the 7 service repos
+  (`repo:<org>/<repo>:ref:refs/tags/v*`, matched with `StringLike` since
+  the tag name itself varies per release). Permissions: ECR authenticate
+  + push, scoped to the 7 BeeBase ECR repository ARNs, plus (gateway's
+  workflow only, by prefix) `s3:PutObject` under `deploy-bundles/*` in
+  the media bucket for the deployment bundle below. Nothing else — in
+  particular, no `/beebase/prod` SSM access.
 - **`<name_prefix>-github-actions-release`** — assumable only by a
   workflow run in `beebase-gateway` under the `production` GitHub
   Environment (`repo:<org>/beebase-gateway:environment:production`).

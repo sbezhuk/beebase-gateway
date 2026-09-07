@@ -1,13 +1,17 @@
 name: CI
 
-# Test -> build -> push a Git-SHA-tagged image to ECR. Mirrors the
-# retired Azure DevOps template's trigger exactly: only a push to main
-# builds and pushes a new image - see beebase-gateway/README.md's
-# "Production deployment" section for what combines these per-service
-# images into an actual release.
+# Test -> build -> push a Git-SHA-tagged image to ECR. Runs only when a
+# release tag (v*) is pushed - a normal push to main or any other branch
+# never triggers this workflow, so a CI run (and an ECR push) happens
+# exactly once per intentional release cut, not on every commit. The
+# image itself is still tagged with the immutable commit SHA the tag
+# points at (${{ github.sha }}), never the tag name - see
+# beebase-gateway/README.md's "Production deployment" section for what
+# combines these per-service images into an actual release.
 on:
   push:
-    branches: [main]
+    tags:
+      - 'v*'
 
 permissions:
   contents: read
@@ -16,6 +20,12 @@ permissions:
 env:
   AWS_REGION: eu-central-1
   ECR_REPOSITORY: beebase-gateway
+  # Same S3 bucket beebase-media-service's blobstore uses (see
+  # terraform/modules/s3-media) - the deployment bundle lives under its
+  # own deploy-bundles/ prefix, which the CI role can only ever PutObject
+  # into (see terraform/modules/github-oidc), never read/write media
+  # objects or anything else in the bucket.
+  DEPLOYMENT_BUNDLE_BUCKET: beebase-production-976033326057
 
 jobs:
   code-quality-and-tests:
@@ -65,3 +75,43 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      # Immutable deployment bundle: exactly docker-compose.prod.yml +
+      # deploy/ as they exist in this commit, nothing else - no .env, no
+      # secrets. The production EC2 host already knows how to fetch this
+      # exact path (see terraform/modules/ec2-instance/user_data.sh.tftpl
+      # and deploy_bundle_version/deploy_bundle_bucket in Terraform); this
+      # step is what actually publishes it, keyed by the same immutable
+      # commit SHA as the Docker image above so both are always in sync.
+      - name: Create deployment bundle (docker-compose.prod.yml + deploy/)
+        run: tar -czf bundle.tar.gz docker-compose.prod.yml deploy
+
+      - name: Upload deployment bundle to S3 (immutable, keyed by commit SHA)
+        run: |
+          aws s3 cp bundle.tar.gz \
+            "s3://${{ env.DEPLOYMENT_BUNDLE_BUCKET }}/deploy-bundles/${{ github.sha }}/bundle.tar.gz"
+
+      - name: Print production image summary
+        run: |
+          {
+            echo "## Production image built successfully"
+            echo ""
+            echo "**Service:** ${{ env.ECR_REPOSITORY }}"
+            echo "**Git tag:** ${{ github.ref_name }}"
+            echo "**Commit SHA:** \`${{ github.sha }}\`"
+            echo ""
+            echo "**Production image:**"
+            echo '```text'
+            echo "${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+            echo '```'
+            echo ""
+            echo "**Deployment bundle:**"
+            echo '```text'
+            echo "s3://${{ env.DEPLOYMENT_BUNDLE_BUCKET }}/deploy-bundles/${{ github.sha }}/bundle.tar.gz"
+            echo '```'
+            echo ""
+            echo "### Use this SHA for the production release"
+            echo '```text'
+            echo "${{ github.sha }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
