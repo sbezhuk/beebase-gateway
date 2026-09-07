@@ -1,11 +1,10 @@
-# BeeBase production edge: TLS termination only. Cloudflare is the
-# public-facing origin (DNS + edge TLS, "Full (Strict)" mode - see the
-# deployment report); this Caddyfile is what makes that mode "Strict"
-# actually valid, by presenting a certificate Cloudflare trusts (a
-# Cloudflare Origin CA certificate, not a publicly-trusted one - nothing
-# but Cloudflare itself is ever expected to connect here directly, since
-# the security group only allows inbound 443/80 from Cloudflare's own
-# published IP ranges).
+# BeeBase production edge: TLS termination only. Caddy is the sole
+# public entry point (the security group allows inbound 80/443 from the
+# whole internet - see terraform/modules/ec2-instance); it obtains and
+# renews its own publicly-trusted certificate from Let's Encrypt
+# automatically (ACME HTTP-01 challenge on :80, which is why that port
+# must stay reachable, not just :443), with no manual cert to provision
+# and no upstream proxy in front of it.
 #
 # gateway is never exposed directly - this is the only container with a
 # published host port, and it only ever proxies to gateway:8080 on the
@@ -18,11 +17,14 @@
 }
 
 {$PUBLIC_DOMAIN} {
-	# Manually-provisioned Cloudflare Origin CA cert, not ACME - Caddy
-	# still automatically redirects plain HTTP on :80 to this block,
-	# which is the one HTTP-related host port docker-compose.prod.yml
-	# publishes it for.
-	tls /etc/caddy/cloudflare-origin.pem /etc/caddy/cloudflare-origin-key.pem
+	# No explicit `tls` directive: Caddy's automatic HTTPS handles
+	# certificate acquisition/renewal itself for the domain in the site
+	# address above, and already includes an HTTP->HTTPS redirect on :80
+	# for it - both were previously done manually (a mounted Cloudflare
+	# Origin CA cert) because Cloudflare's proxy, not Caddy, terminated
+	# public TLS. The ACME-obtained cert/key persist in the `caddy-data`
+	# volume (see docker-compose.prod.yml), so a container restart
+	# doesn't re-request a new one from Let's Encrypt every time.
 
 	encode gzip
 

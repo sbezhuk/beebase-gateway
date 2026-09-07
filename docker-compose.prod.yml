@@ -57,11 +57,12 @@ services:
       - "443:443"
     volumes:
       - ../config/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ../config/cloudflare-origin.pem:/etc/caddy/cloudflare-origin.pem:ro
-      - ../config/cloudflare-origin-key.pem:/etc/caddy/cloudflare-origin-key.pem:ro
+      # Caddy's own ACME-obtained Let's Encrypt certificate/key live here,
+      # not as a mounted file - this volume is what makes them survive a
+      # container restart instead of being re-requested every time.
       - caddy-data:/data
     environment:
-      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN, e.g. api.beebase.app}
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN, e.g. api.beebase.club}
     networks: [beebase]
     depends_on:
       gateway:
@@ -133,7 +134,15 @@ services:
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?set JWT_PRIVATE_KEY}
       ACCESS_TOKEN_TTL: 15m
       REFRESH_TOKEN_TTL: 720h
-      COOKIE_DOMAIN: ${COOKIE_DOMAIN:?set COOKIE_DOMAIN, e.g. .beebase.app}
+      # Empty (the app's own default, see auth-service's config.go) is
+      # correct here, not a placeholder needing a value: the refresh
+      # cookie only ever needs to be read back by api.beebase.club
+      # itself - there's no separate first-party subdomain in this
+      # architecture that also needs it, so "host only" is the right
+      # scope, not a shared-parent-domain leading dot. Left as an
+      # optional override (:-, not :?) rather than removed entirely, in
+      # case that ever changes.
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set TOTP_ENCRYPTION_KEY}
       TOTP_ISSUER: BeeBase
       MEDIA_SERVICE_URL: http://media-service:8080
