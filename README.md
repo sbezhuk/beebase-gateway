@@ -98,6 +98,16 @@ is listening (see `.env.example`), then `make run`.
 
 ## Configuration
 
+All configuration is via environment variables (see
+[.env.example](.env.example) for the full list — it is a template only,
+never read by the app, Docker Compose, or deployment tooling; copy it
+once to create your real `.env`, which is what actually gets loaded).
+Production configuration is generated at deploy time on the EC2 host
+from AWS SSM Parameter Store (see [deploy/deploy.sh](deploy/deploy.sh),
+which writes a fresh `/opt/beebase/config/.env` and fails the deploy if
+the expected parameters aren't there) — `.env.example` is never used as
+a fallback, in development or in production.
+
 | Variable | Default | Description |
 |---|---|---|
 | `APP_ENV` | `development` | `development` or `production` |
