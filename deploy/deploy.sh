@@ -46,7 +46,7 @@ ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 #     write a fresh 0600 environment file ---
 #
 # Everything under /beebase/prod - both plain config (PUBLIC_DOMAIN,
-# R2_BUCKET, ...) and SecureString secrets (JWT_PRIVATE_KEY,
+# STORAGE_BUCKET, ...) and SecureString secrets (JWT_PRIVATE_KEY,
 # POSTGRES_*_PASSWORD, ...) - lives in one path so a single call
 # retrieves it all; --with-decryption is a no-op for the plain-String
 # parameters and decrypts the SecureString ones.

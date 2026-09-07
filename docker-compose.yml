@@ -360,17 +360,13 @@ services:
       # unlike the AUTH_JWKS_URL above - this must be the gateway's own
       # externally reachable address, not an in-network hostname.
       PUBLIC_BASE_URL: http://localhost:8080
-      # Required: file content is stored in S3-compatible object storage,
-      # not the database - see beebase-media-service's README Storage
-      # section. Set these in .env; there's no local/in-memory fallback.
-      # A local/personal bucket on any S3-compatible provider works -
-      # this does not need to be (and in production is not) Cloudflare R2.
+      # Required: file content is stored in Amazon S3, not the database -
+      # see beebase-media-service's README Storage section. Set these in
+      # .env; there's no local/in-memory fallback. Credentials are
+      # resolved by the AWS SDK's default chain (e.g. a local
+      # `aws configure` profile) - there's no app-level credential config.
       STORAGE_BUCKET: ${STORAGE_BUCKET:?set STORAGE_BUCKET in .env, see beebase-media-service's .env.example}
       STORAGE_REGION: ${STORAGE_REGION:?set STORAGE_REGION in .env, see beebase-media-service's .env.example}
-      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:-}
-      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:-}
-      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:-}
-      STORAGE_FORCE_PATH_STYLE: ${STORAGE_FORCE_PATH_STYLE:-false}
     depends_on:
       media-postgres:
         condition: service_healthy

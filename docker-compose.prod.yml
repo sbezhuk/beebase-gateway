@@ -296,14 +296,11 @@ services:
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
       PUBLIC_BASE_URL: https://${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
-      # Media blobs live in Amazon S3. No STORAGE_ACCESS_KEY_ID/
-      # STORAGE_SECRET_ACCESS_KEY here, deliberately: the container
-      # authenticates to S3 via the EC2 instance's IAM role (see
-      # terraform/modules/iam), resolved automatically by the AWS SDK's
-      # default credential chain - no static key ever exists on this
-      # host or in this image. STORAGE_ENDPOINT is also left unset, so
-      # the SDK uses S3's normal regional endpoint rather than an
-      # R2-style override.
+      # Media blobs live in Amazon S3. No static access key here,
+      # deliberately: the container authenticates to S3 via the EC2
+      # instance's IAM role (see terraform/modules/iam), resolved
+      # automatically by the AWS SDK's default credential chain - no
+      # static key ever exists on this host or in this image.
       STORAGE_BUCKET: ${STORAGE_BUCKET:?set STORAGE_BUCKET}
       STORAGE_REGION: ${AWS_REGION:?set AWS_REGION}
     networks: [beebase]
