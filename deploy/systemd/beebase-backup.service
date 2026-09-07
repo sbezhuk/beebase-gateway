@@ -1,0 +1,8 @@
+[Unit]
+Description=BeeBase PostgreSQL backup (pg_dump x5 -> S3)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/beebase/deploy/backup-postgres.sh

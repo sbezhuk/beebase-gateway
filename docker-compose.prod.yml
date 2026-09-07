@@ -1,0 +1,551 @@
+# Production stack for the single-EC2 BeeBase MVP. Lives beside (and is
+# fully independent of) docker-compose.yml, which remains the local dev
+# entrypoint and is untouched by this file.
+#
+# Run from /opt/beebase/compose on the production host (see deploy.sh).
+# Every image reference and secret comes from the environment - this
+# file has no defaults that silently fall back to "latest" or to a
+# built-in password, by design:
+#   - ECR_REGISTRY, IMAGE_TAG: required, no default (see the ${VAR:?...}
+#     guards below) - a missing IMAGE_TAG fails the `docker compose`
+#     invocation instead of silently reusing whatever "latest" happens
+#     to resolve to.
+#   - Secrets (JWT_PRIVATE_KEY, TOTP_ENCRYPTION_KEY, POSTGRES_*_PASSWORD,
+#     R2_*) come from a .env file deploy.sh generates fresh from SSM
+#     Parameter Store on every deploy - never committed, never baked
+#     into an image.
+#
+# Only the `edge` (Caddy) service publishes a host port. Every other
+# container - gateway included - is reachable solely on the internal
+# `beebase` Docker network.
+
+services:
+  # --- edge: TLS termination, sole public entry point ---
+
+  edge:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../config/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../config/cloudflare-origin.pem:/etc/caddy/cloudflare-origin.pem:ro
+      - ../config/cloudflare-origin-key.pem:/etc/caddy/cloudflare-origin-key.pem:ro
+      - caddy-data:/data
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN, e.g. api.beebase.app}
+    networks: [beebase]
+    depends_on:
+      gateway:
+        condition: service_healthy
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/infra
+        awslogs-stream: edge-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  # --- gateway: sole application entry point behind edge ---
+
+  gateway:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-gateway:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      HTTP_PORT: "8080"
+      AUTH_SERVICE_URL: http://auth-service:8080
+      APIARY_SERVICE_URL: http://apiary-service:8080
+      HIVE_SERVICE_URL: http://hive-service:8080
+      INSPECTION_SERVICE_URL: http://inspection-service:8080
+      MEDIA_SERVICE_URL: http://media-service:8080
+      STATISTICS_SERVICE_URL: http://statistics-service:8080
+    networks: [beebase]
+    depends_on:
+      auth-service: { condition: service_healthy }
+      apiary-service: { condition: service_healthy }
+      hive-service: { condition: service_healthy }
+      inspection-service: { condition: service_healthy }
+      media-service: { condition: service_healthy }
+      statistics-service: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-gateway
+        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  # --- auth-service ---
+
+  auth-service:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-auth-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://beebase:${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}@postgres-auth:5432/beebase_auth?sslmode=disable
+      REDIS_ADDR: redis:6379
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?set JWT_PRIVATE_KEY}
+      ACCESS_TOKEN_TTL: 15m
+      REFRESH_TOKEN_TTL: 720h
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:?set COOKIE_DOMAIN, e.g. .beebase.app}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set TOTP_ENCRYPTION_KEY}
+      TOTP_ISSUER: BeeBase
+      MEDIA_SERVICE_URL: http://media-service:8080
+      APIARY_SERVICE_URL: http://apiary-service:8080
+    networks: [beebase]
+    depends_on:
+      postgres-auth: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate-auth: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-auth-service
+        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  # --- apiary-service ---
+
+  apiary-service:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-apiary-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://beebase:${POSTGRES_APIARY_PASSWORD:?set POSTGRES_APIARY_PASSWORD}@postgres-apiary:5432/beebase_apiary?sslmode=disable
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
+      HIVE_SERVICE_URL: http://hive-service:8080
+      MEDIA_SERVICE_URL: http://media-service:8080
+      PUBLIC_BASE_URL: https://${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
+    networks: [beebase]
+    depends_on:
+      postgres-apiary: { condition: service_healthy }
+      auth-service: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate-apiary: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-apiary-service
+        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  # --- hive-service ---
+
+  hive-service:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-hive-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://beebase:${POSTGRES_HIVE_PASSWORD:?set POSTGRES_HIVE_PASSWORD}@postgres-hive:5432/beebase_hive?sslmode=disable
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
+      APIARY_SERVICE_URL: http://apiary-service:8080
+      INSPECTION_SERVICE_URL: http://inspection-service:8080
+      MEDIA_SERVICE_URL: http://media-service:8080
+      PUBLIC_BASE_URL: https://${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
+    networks: [beebase]
+    depends_on:
+      postgres-hive: { condition: service_healthy }
+      auth-service: { condition: service_healthy }
+      apiary-service: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate-hive: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-hive-service
+        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  # --- inspection-service ---
+
+  inspection-service:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-inspection-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://beebase:${POSTGRES_INSPECTION_PASSWORD:?set POSTGRES_INSPECTION_PASSWORD}@postgres-inspection:5432/beebase_inspection?sslmode=disable
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
+      HIVE_SERVICE_URL: http://hive-service:8080
+      MEDIA_SERVICE_URL: http://media-service:8080
+      PUBLIC_BASE_URL: https://${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
+    networks: [beebase]
+    depends_on:
+      postgres-inspection: { condition: service_healthy }
+      auth-service: { condition: service_healthy }
+      hive-service: { condition: service_healthy }
+      media-service: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate-inspection: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-inspection-service
+        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  # --- media-service ---
+
+  media-service:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-media-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://beebase:${POSTGRES_MEDIA_PASSWORD:?set POSTGRES_MEDIA_PASSWORD}@postgres-media:5432/beebase_media?sslmode=disable
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
+      PUBLIC_BASE_URL: https://${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
+      # Media blobs stay in Cloudflare R2, unchanged from local dev.
+      R2_ENDPOINT: ${R2_ENDPOINT:?set R2_ENDPOINT}
+      R2_BUCKET: ${R2_BUCKET:?set R2_BUCKET}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?set R2_ACCESS_KEY_ID}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?set R2_SECRET_ACCESS_KEY}
+    networks: [beebase]
+    depends_on:
+      postgres-media: { condition: service_healthy }
+      auth-service: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate-media: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-media-service
+        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  # --- statistics-service (stateless, no database of its own) ---
+
+  statistics-service:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-statistics-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      HTTP_PORT: "8080"
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
+      APIARY_SERVICE_URL: http://apiary-service:8080
+      HIVE_SERVICE_URL: http://hive-service:8080
+      INSPECTION_SERVICE_URL: http://inspection-service:8080
+    networks: [beebase]
+    depends_on:
+      auth-service: { condition: service_healthy }
+      apiary-service: { condition: service_healthy }
+      hive-service: { condition: service_healthy }
+      inspection-service: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-statistics-service
+        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  # --- PostgreSQL, one container per bounded context, each on its own
+  #     bind-mounted directory on the dedicated EBS data volume. No host
+  #     port is published for any of them - only reachable from other
+  #     containers on the `beebase` network. ---
+
+  postgres-auth:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: beebase
+      POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}
+      POSTGRES_DB: beebase_auth
+    volumes:
+      - /mnt/beebase-data/postgres/auth:/var/lib/postgresql/data
+    networks: [beebase]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beebase -d beebase_auth"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/infra
+        awslogs-stream: postgres-auth-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  postgres-apiary:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: beebase
+      POSTGRES_PASSWORD: ${POSTGRES_APIARY_PASSWORD:?set POSTGRES_APIARY_PASSWORD}
+      POSTGRES_DB: beebase_apiary
+    volumes:
+      - /mnt/beebase-data/postgres/apiary:/var/lib/postgresql/data
+    networks: [beebase]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beebase -d beebase_apiary"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/infra
+        awslogs-stream: postgres-apiary-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  postgres-hive:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: beebase
+      POSTGRES_PASSWORD: ${POSTGRES_HIVE_PASSWORD:?set POSTGRES_HIVE_PASSWORD}
+      POSTGRES_DB: beebase_hive
+    volumes:
+      - /mnt/beebase-data/postgres/hive:/var/lib/postgresql/data
+    networks: [beebase]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beebase -d beebase_hive"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/infra
+        awslogs-stream: postgres-hive-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  postgres-inspection:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: beebase
+      POSTGRES_PASSWORD: ${POSTGRES_INSPECTION_PASSWORD:?set POSTGRES_INSPECTION_PASSWORD}
+      POSTGRES_DB: beebase_inspection
+    volumes:
+      - /mnt/beebase-data/postgres/inspection:/var/lib/postgresql/data
+    networks: [beebase]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beebase -d beebase_inspection"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/infra
+        awslogs-stream: postgres-inspection-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  postgres-media:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: beebase
+      POSTGRES_PASSWORD: ${POSTGRES_MEDIA_PASSWORD:?set POSTGRES_MEDIA_PASSWORD}
+      POSTGRES_DB: beebase_media
+    volumes:
+      - /mnt/beebase-data/postgres/media:/var/lib/postgresql/data
+    networks: [beebase]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beebase -d beebase_media"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/infra
+        awslogs-stream: postgres-media-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  # --- Redis: shared single-active-session store ---
+  #
+  # No host port published, no AUTH (the app doesn't support it yet -
+  # see the deployment report's risk list) - network isolation on the
+  # internal-only `beebase` network is the control here. AOF persistence
+  # is enabled: not required for correctness (a lost session marker just
+  # costs the affected user one extra refresh round-trip - see
+  # beebase-auth-service's issueSession, which re-Activates on every
+  # login/refresh/setup), but cheap enough to avoid that blip on restart.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    networks: [beebase]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/infra
+        awslogs-stream: redis-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  # --- Migrations: one-shot per database, gated before its app service
+  #     starts. Images are pre-built with the SQL files baked in (see
+  #     each service's Dockerfile.migrate) and tagged <sha>-migrate
+  #     alongside the app image - the host never checks out source. ---
+
+  migrate-auth:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-auth-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
+    restart: "no"
+    command:
+      - -path=/migrations
+      - -database=postgres://beebase:${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}@postgres-auth:5432/beebase_auth?sslmode=disable
+      - up
+    networks: [beebase]
+    depends_on:
+      postgres-auth: { condition: service_healthy }
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-auth-service
+        awslogs-stream: migrate-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  migrate-apiary:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-apiary-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
+    restart: "no"
+    command:
+      - -path=/migrations
+      - -database=postgres://beebase:${POSTGRES_APIARY_PASSWORD:?set POSTGRES_APIARY_PASSWORD}@postgres-apiary:5432/beebase_apiary?sslmode=disable
+      - up
+    networks: [beebase]
+    depends_on:
+      postgres-apiary: { condition: service_healthy }
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-apiary-service
+        awslogs-stream: migrate-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  migrate-hive:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-hive-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
+    restart: "no"
+    command:
+      - -path=/migrations
+      - -database=postgres://beebase:${POSTGRES_HIVE_PASSWORD:?set POSTGRES_HIVE_PASSWORD}@postgres-hive:5432/beebase_hive?sslmode=disable
+      - up
+    networks: [beebase]
+    depends_on:
+      postgres-hive: { condition: service_healthy }
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-hive-service
+        awslogs-stream: migrate-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  migrate-inspection:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-inspection-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
+    restart: "no"
+    command:
+      - -path=/migrations
+      - -database=postgres://beebase:${POSTGRES_INSPECTION_PASSWORD:?set POSTGRES_INSPECTION_PASSWORD}@postgres-inspection:5432/beebase_inspection?sslmode=disable
+      - up
+    networks: [beebase]
+    depends_on:
+      postgres-inspection: { condition: service_healthy }
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-inspection-service
+        awslogs-stream: migrate-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+  migrate-media:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-media-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
+    restart: "no"
+    command:
+      - -path=/migrations
+      - -database=postgres://beebase:${POSTGRES_MEDIA_PASSWORD:?set POSTGRES_MEDIA_PASSWORD}@postgres-media:5432/beebase_media?sslmode=disable
+      - up
+    networks: [beebase]
+    depends_on:
+      postgres-media: { condition: service_healthy }
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-media-service
+        awslogs-stream: migrate-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-create-group: "true"
+
+networks:
+  beebase:
+    driver: bridge
+
+volumes:
+  redis-data:
+  caddy-data:

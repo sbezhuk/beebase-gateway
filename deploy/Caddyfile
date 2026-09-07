@@ -1,0 +1,33 @@
+# BeeBase production edge: TLS termination only. Cloudflare is the
+# public-facing origin (DNS + edge TLS, "Full (Strict)" mode - see the
+# deployment report); this Caddyfile is what makes that mode "Strict"
+# actually valid, by presenting a certificate Cloudflare trusts (a
+# Cloudflare Origin CA certificate, not a publicly-trusted one - nothing
+# but Cloudflare itself is ever expected to connect here directly, since
+# the security group only allows inbound 443/80 from Cloudflare's own
+# published IP ranges).
+#
+# gateway is never exposed directly - this is the only container with a
+# published host port, and it only ever proxies to gateway:8080 on the
+# internal `beebase` Docker network.
+
+{
+	# No admin API exposed - nothing needs to reach it, and it isn't
+	# published to the host regardless.
+	admin off
+}
+
+{$PUBLIC_DOMAIN} {
+	# Manually-provisioned Cloudflare Origin CA cert, not ACME - Caddy
+	# still automatically redirects plain HTTP on :80 to this block,
+	# which is the one HTTP-related host port docker-compose.prod.yml
+	# publishes it for.
+	tls /etc/caddy/cloudflare-origin.pem /etc/caddy/cloudflare-origin-key.pem
+
+	encode gzip
+
+	reverse_proxy gateway:8080 {
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+	}
+}

@@ -62,10 +62,7 @@ services:
 
   auth-service:
     build:
-      # Repo root, so the build can also see the sibling beebase-common
-      # module that go.mod's replace directive points at.
-      context: ..
-      dockerfile: beebase-auth-service/Dockerfile
+      context: ../beebase-auth-service
     restart: unless-stopped
     environment:
       APP_ENV: production
@@ -140,10 +137,7 @@ services:
 
   apiary-service:
     build:
-      # Repo root, so the build can also see the sibling beebase-common
-      # module that go.mod's replace directive points at.
-      context: ..
-      dockerfile: beebase-apiary-service/Dockerfile
+      context: ../beebase-apiary-service
     restart: unless-stopped
     environment:
       APP_ENV: production
@@ -214,10 +208,7 @@ services:
 
   hive-service:
     build:
-      # Repo root, so the build can also see the sibling beebase-common
-      # module that go.mod's replace directive points at.
-      context: ..
-      dockerfile: beebase-hive-service/Dockerfile
+      context: ../beebase-hive-service
     restart: unless-stopped
     environment:
       APP_ENV: production
@@ -289,10 +280,7 @@ services:
 
   inspection-service:
     build:
-      # Repo root, so the build can also see the sibling beebase-common
-      # module that go.mod's replace directive points at.
-      context: ..
-      dockerfile: beebase-inspection-service/Dockerfile
+      context: ../beebase-inspection-service
     restart: unless-stopped
     environment:
       APP_ENV: production
@@ -359,10 +347,7 @@ services:
 
   media-service:
     build:
-      # Repo root, so the build can also see the sibling beebase-common
-      # module that go.mod's replace directive points at.
-      context: ..
-      dockerfile: beebase-media-service/Dockerfile
+      context: ../beebase-media-service
     restart: unless-stopped
     environment:
       APP_ENV: production
@@ -401,10 +386,7 @@ services:
 
   statistics-service:
     build:
-      # Repo root, so the build can also see the sibling beebase-common
-      # module that go.mod's replace directive points at.
-      context: ..
-      dockerfile: beebase-statistics-service/Dockerfile
+      context: ../beebase-statistics-service
     restart: unless-stopped
     environment:
       APP_ENV: production

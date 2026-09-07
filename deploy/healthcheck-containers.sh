@@ -1,0 +1,33 @@
+#!/bin/bash
+# Publishes a custom CloudWatch metric counting docker compose containers
+# whose own healthcheck currently reports "unhealthy", feeding the
+# BeeBase/Production UnhealthyContainerCount alarm. Runs every 5 minutes
+# via a systemd timer - deliberately simple: docker compose's own
+# `restart: unless-stopped` already handles transient recovery, this is
+# only for "something has been down long enough for a human to know."
+set -euo pipefail
+
+COMPOSE_DIR="/opt/beebase/compose"
+CONFIG_DIR="/opt/beebase/config"
+ENV_FILE="${CONFIG_DIR}/.env"
+COMPOSE="docker compose -f ${COMPOSE_DIR}/docker-compose.prod.yml --env-file ${ENV_FILE}"
+
+[ -f "${ENV_FILE}" ] || exit 0 # nothing deployed yet
+
+IMDS_TOKEN=$(curl -fsS -X PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+AWS_REGION=$(curl -fsS -H "X-aws-ec2-metadata-token: ${IMDS_TOKEN}" \
+  http://169.254.169.254/latest/meta-data/placement/region)
+INSTANCE_ID=$(curl -fsS -H "X-aws-ec2-metadata-token: ${IMDS_TOKEN}" \
+  http://169.254.169.254/latest/meta-data/instance-id)
+
+UNHEALTHY_COUNT=$(${COMPOSE} ps --format json --all \
+  | jq -s '[.[] | select(.Health == "unhealthy")] | length')
+
+aws cloudwatch put-metric-data \
+  --region "${AWS_REGION}" \
+  --namespace "BeeBase/Production" \
+  --metric-name UnhealthyContainerCount \
+  --dimensions "InstanceId=${INSTANCE_ID}" \
+  --value "${UNHEALTHY_COUNT}" \
+  --unit Count

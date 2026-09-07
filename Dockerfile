@@ -7,7 +7,15 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/gateway ./cmd/gateway
+
+# TARGETOS/TARGETARCH are populated automatically by BuildKit to match
+# the requested --platform (e.g. `docker buildx build --platform
+# linux/arm64`); with no --platform given they default to the host's own
+# platform, so a plain local `docker build`/`docker compose build` is
+# unaffected and keeps building for the machine it runs on.
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/gateway ./cmd/gateway
 
 ## Runtime stage
 FROM alpine:3.20
