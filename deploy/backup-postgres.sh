@@ -20,8 +20,8 @@ fail() { echo "[backup $(date -u +%H:%M:%S)] ERROR: $*" >&2; exit 1; }
 
 [ -f "${ENV_FILE}" ] || fail "${ENV_FILE} not found - has deploy.sh ever run successfully?"
 
-S3_BACKUP_BUCKET=$(grep -m1 '^S3_BACKUP_BUCKET=' "${ENV_FILE}" | cut -d= -f2-)
-[ -n "${S3_BACKUP_BUCKET}" ] || fail "S3_BACKUP_BUCKET not set in ${ENV_FILE} (check SSM Parameter Store)"
+S3_BACKUP_BUCKET=$(grep -m1 '^STORAGE_BUCKET=' "${ENV_FILE}" | cut -d= -f2-)
+[ -n "${S3_BACKUP_BUCKET}" ] || fail "STORAGE_BUCKET not set in ${ENV_FILE} (check SSM Parameter Store)"
 
 TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
 FAILURES=0
