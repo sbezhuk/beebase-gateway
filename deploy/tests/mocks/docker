@@ -37,9 +37,21 @@ case "${sub}" in
 
   ps)
     if [ "$1" = "--format" ]; then
-      # ps --format json <service>: report healthy immediately, no
-      # simulated startup delay needed for the test.
-      echo '{"Health":"healthy"}'
+      # ps --format json <service>: report healthy/running immediately,
+      # no simulated startup delay needed for the test.
+      #
+      # edge defines no Docker HEALTHCHECK in real life (Health=none) -
+      # MOCK_EDGE_STATE lets a test override its State to exercise
+      # deploy.sh's failure handling (exited/dead/not-found).
+      svc="$3"
+      if [ "${svc}" = "edge" ]; then
+        case "${MOCK_EDGE_STATE:-running}" in
+          not-found) : ;; # no rows for this service, like a container that doesn't exist
+          *) echo "{\"State\":\"${MOCK_EDGE_STATE:-running}\",\"Health\":\"none\"}" ;;
+        esac
+      else
+        echo '{"State":"running","Health":"healthy"}'
+      fi
     else
       echo "NAME  STATUS"
     fi

@@ -191,6 +191,57 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# --- 9. edge has no Docker HEALTHCHECK (Health=none) and must still
+#     pass deployment once its container state is "running", logging
+#     that explicitly instead of waiting for "healthy" ---
+
+run_deploy "${VALID_FILE}"
+if [ "${RC}" -eq 0 ] && echo "${OUT}" | grep -q "edge is running"; then
+  echo "PASS: edge with Health=none is accepted once running, and logged as such"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: edge with Health=none is accepted once running, and logged as such (rc=${RC})"
+  echo "${OUT}"
+  FAIL=$((FAIL + 1))
+fi
+
+# --- 10. edge exited is an outright deployment failure, not a retry ---
+
+MOCK_EDGE_STATE="exited" run_deploy "${VALID_FILE}"
+if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -qi "edge container is exited"; then
+  echo "PASS: edge container exited fails the deploy with a clear message"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: edge container exited fails the deploy with a clear message (rc=${RC})"
+  echo "${OUT}"
+  FAIL=$((FAIL + 1))
+fi
+
+# --- 11. edge dead is an outright deployment failure ---
+
+MOCK_EDGE_STATE="dead" run_deploy "${VALID_FILE}"
+if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -qi "edge container is dead"; then
+  echo "PASS: edge container dead fails the deploy with a clear message"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: edge container dead fails the deploy with a clear message (rc=${RC})"
+  echo "${OUT}"
+  FAIL=$((FAIL + 1))
+fi
+
+# --- 12. edge container not found at all is an outright deployment
+#     failure ---
+
+MOCK_EDGE_STATE="not-found" run_deploy "${VALID_FILE}"
+if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -qi "edge container is not-found"; then
+  echo "PASS: edge container not found fails the deploy with a clear message"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: edge container not found fails the deploy with a clear message (rc=${RC})"
+  echo "${OUT}"
+  FAIL=$((FAIL + 1))
+fi
+
 echo
 echo "deploy.sh integration tests: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

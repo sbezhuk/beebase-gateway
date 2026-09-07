@@ -315,9 +315,48 @@ log "starting/recreating the full stack"
 ${COMPOSE} up -d --remove-orphans
 
 # --- 15. Wait for health/readiness checks ---
+#
+# `edge` (Caddy) intentionally defines no Docker HEALTHCHECK - Caddy's
+# own startup logs already confirm it is serving traffic and has
+# provisioned TLS, so a Docker health status would be redundant and we
+# do not add a fake one just to satisfy this script. Docker therefore
+# always reports Health=none for it, which must not be treated as
+# "unhealthy": edge is ready once its container state is "running".
+# exited/dead/a container that can't be found at all are treated as an
+# outright deployment failure rather than something worth retrying.
+
+log "waiting for edge to be running"
+
+EDGE_READY=0
+EDGE_STATE="starting"
+
+for i in $(seq 1 30); do
+  EDGE_STATE=$(
+    ${COMPOSE} ps --format json edge |
+      jq -r '.State // empty'
+  )
+
+  [ -n "${EDGE_STATE}" ] || EDGE_STATE="not-found"
+
+  case "${EDGE_STATE}" in
+    running)
+      EDGE_READY=1
+      break
+      ;;
+    exited | dead | not-found)
+      fail "edge container is ${EDGE_STATE} - deployment failed"
+      ;;
+  esac
+
+  sleep 2
+done
+
+[ "${EDGE_READY}" -eq 1 ] \
+  || fail "edge did not reach running state in time (last state: ${EDGE_STATE})"
+
+log "edge is running"
 
 APP_SERVICES="
-edge
 gateway
 auth-service
 apiary-service
