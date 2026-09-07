@@ -11,6 +11,24 @@
 # development; this one is only for running the full stack together.
 
 services:
+  # --- shared session store ---
+  #
+  # One Redis instance shared by every backend service below (unlike each
+  # service's own postgres, which stays private to it): it's what lets an
+  # access token be rejected the instant its session is superseded by a
+  # newer one, instead of staying valid until its own JWT expiry.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   # --- auth-service ---
 
   auth-postgres:
@@ -54,6 +72,7 @@ services:
       LOG_LEVEL: info
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://beebase:beebase@auth-postgres:5432/beebase_auth?sslmode=disable
+      REDIS_ADDR: redis:6379
       # Required: base64 Ed25519 private key. Generate with:
       #   (cd ../beebase-auth-service && make keygen)
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?set JWT_PRIVATE_KEY in .env, see beebase-auth-service's make keygen}
@@ -80,6 +99,8 @@ services:
         condition: service_healthy
       auth-migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 5s
@@ -130,6 +151,7 @@ services:
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://beebase:beebase@apiary-postgres:5432/beebase_apiary?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
       # Deleting an apiary cascades to its hives and media. hive-service
       # and media-service are not added to depends_on below: each already
       # depends on apiary-service (for its own ownership verifier), so the
@@ -150,6 +172,8 @@ services:
       apiary-migrate:
         condition: service_completed_successfully
       auth-service:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
@@ -201,6 +225,7 @@ services:
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://beebase:beebase@hive-postgres:5432/beebase_hive?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
       APIARY_SERVICE_URL: http://apiary-service:8080
       # Deleting a hive cascades to its inspections and media.
       # inspection-service and media-service are not added to depends_on
@@ -222,6 +247,8 @@ services:
       auth-service:
         condition: service_healthy
       apiary-service:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
@@ -273,6 +300,7 @@ services:
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://beebase:beebase@inspection-postgres:5432/beebase_inspection?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
       HIVE_SERVICE_URL: http://hive-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
       # Handed to clients as part of each image's image_url, so - unlike
@@ -289,6 +317,8 @@ services:
       hive-service:
         condition: service_healthy
       media-service:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
@@ -340,6 +370,7 @@ services:
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://beebase:beebase@media-postgres:5432/beebase_media?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
       # Handed to clients as part of each media item's image_url, so -
       # unlike the AUTH_JWKS_URL above - this must be the gateway's own
       # externally reachable address, not an in-network hostname.
@@ -358,6 +389,8 @@ services:
         condition: service_completed_successfully
       auth-service:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 5s
@@ -368,13 +401,17 @@ services:
 
   statistics-service:
     build:
-      context: ../beebase-statistics-service
+      # Repo root, so the build can also see the sibling beebase-common
+      # module that go.mod's replace directive points at.
+      context: ..
+      dockerfile: beebase-statistics-service/Dockerfile
     restart: unless-stopped
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
       APIARY_SERVICE_URL: http://apiary-service:8080
       HIVE_SERVICE_URL: http://hive-service:8080
       INSPECTION_SERVICE_URL: http://inspection-service:8080
@@ -386,6 +423,8 @@ services:
       hive-service:
         condition: service_healthy
       inspection-service:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
