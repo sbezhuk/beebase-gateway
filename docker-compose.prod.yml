@@ -19,6 +19,30 @@
 # Only the `edge` (Caddy) service publishes a host port. Every other
 # container - gateway included - is reachable solely on the internal
 # `beebase` Docker network.
+#
+# Sized for a t4g.micro (1GiB RAM) host: every service below carries a
+# conservative mem_limit/mem_reservation, the 5 PostgreSQL instances are
+# tuned down from their (surprisingly high, for 5-on-one-host)
+# out-of-the-box defaults, and Redis's AOF persistence is disabled - see
+# each section's own comment for the reasoning. This is a tight fit, not
+# a comfortable one; see the deployment report for the full capacity
+# analysis and its residual risk.
+
+# Identical across all 5 PostgreSQL instances, so defined once. Default
+# shared_buffers alone is 128MB - five instances at the default would be
+# 640MB before anything else starts, which alone doesn't fit a 1GiB host.
+x-pg-tuning-flags: &pg-tuning-flags
+  - postgres
+  - -c
+  - shared_buffers=16MB
+  - -c
+  - work_mem=2MB
+  - -c
+  - maintenance_work_mem=32MB
+  - -c
+  - max_connections=20
+  - -c
+  - effective_cache_size=96MB
 
 services:
   # --- edge: TLS termination, sole public entry point ---
@@ -26,6 +50,8 @@ services:
   edge:
     image: caddy:2.9-alpine
     restart: unless-stopped
+    mem_limit: 32m
+    mem_reservation: 16m
     ports:
       - "80:80"
       - "443:443"
@@ -53,10 +79,16 @@ services:
   gateway:
     image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-gateway:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
     restart: unless-stopped
+    mem_limit: 48m
+    mem_reservation: 16m
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
+      # Soft cap for the Go runtime's GC, kept below the hard mem_limit
+      # above so the GC reacts to memory pressure before Docker's OOM
+      # killer would - see the deployment report's t4g.micro sizing note.
+      GOMEMLIMIT: 40MiB
       AUTH_SERVICE_URL: http://auth-service:8080
       APIARY_SERVICE_URL: http://apiary-service:8080
       HIVE_SERVICE_URL: http://hive-service:8080
@@ -89,10 +121,13 @@ services:
   auth-service:
     image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-auth-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
     restart: unless-stopped
+    mem_limit: 48m
+    mem_reservation: 16m
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
+      GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}@postgres-auth:5432/beebase_auth?sslmode=disable
       REDIS_ADDR: redis:6379
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?set JWT_PRIVATE_KEY}
@@ -126,10 +161,13 @@ services:
   apiary-service:
     image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-apiary-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
     restart: unless-stopped
+    mem_limit: 48m
+    mem_reservation: 16m
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
+      GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_APIARY_PASSWORD:?set POSTGRES_APIARY_PASSWORD}@postgres-apiary:5432/beebase_apiary?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
@@ -160,10 +198,13 @@ services:
   hive-service:
     image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-hive-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
     restart: unless-stopped
+    mem_limit: 48m
+    mem_reservation: 16m
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
+      GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_HIVE_PASSWORD:?set POSTGRES_HIVE_PASSWORD}@postgres-hive:5432/beebase_hive?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
@@ -196,10 +237,13 @@ services:
   inspection-service:
     image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-inspection-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
     restart: unless-stopped
+    mem_limit: 48m
+    mem_reservation: 16m
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
+      GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_INSPECTION_PASSWORD:?set POSTGRES_INSPECTION_PASSWORD}@postgres-inspection:5432/beebase_inspection?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
@@ -232,10 +276,13 @@ services:
   media-service:
     image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-media-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
     restart: unless-stopped
+    mem_limit: 48m
+    mem_reservation: 16m
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
+      GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_MEDIA_PASSWORD:?set POSTGRES_MEDIA_PASSWORD}@postgres-media:5432/beebase_media?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
@@ -274,10 +321,13 @@ services:
   statistics-service:
     image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-statistics-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
     restart: unless-stopped
+    mem_limit: 48m
+    mem_reservation: 16m
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
+      GOMEMLIMIT: 40MiB
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
       APIARY_SERVICE_URL: http://apiary-service:8080
@@ -311,6 +361,9 @@ services:
   postgres-auth:
     image: postgres:16-alpine
     restart: unless-stopped
+    command: *pg-tuning-flags
+    mem_limit: 64m
+    mem_reservation: 32m
     environment:
       POSTGRES_USER: beebase
       POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}
@@ -334,6 +387,9 @@ services:
   postgres-apiary:
     image: postgres:16-alpine
     restart: unless-stopped
+    command: *pg-tuning-flags
+    mem_limit: 64m
+    mem_reservation: 32m
     environment:
       POSTGRES_USER: beebase
       POSTGRES_PASSWORD: ${POSTGRES_APIARY_PASSWORD:?set POSTGRES_APIARY_PASSWORD}
@@ -357,6 +413,9 @@ services:
   postgres-hive:
     image: postgres:16-alpine
     restart: unless-stopped
+    command: *pg-tuning-flags
+    mem_limit: 64m
+    mem_reservation: 32m
     environment:
       POSTGRES_USER: beebase
       POSTGRES_PASSWORD: ${POSTGRES_HIVE_PASSWORD:?set POSTGRES_HIVE_PASSWORD}
@@ -380,6 +439,9 @@ services:
   postgres-inspection:
     image: postgres:16-alpine
     restart: unless-stopped
+    command: *pg-tuning-flags
+    mem_limit: 64m
+    mem_reservation: 32m
     environment:
       POSTGRES_USER: beebase
       POSTGRES_PASSWORD: ${POSTGRES_INSPECTION_PASSWORD:?set POSTGRES_INSPECTION_PASSWORD}
@@ -403,6 +465,9 @@ services:
   postgres-media:
     image: postgres:16-alpine
     restart: unless-stopped
+    command: *pg-tuning-flags
+    mem_limit: 64m
+    mem_reservation: 32m
     environment:
       POSTGRES_USER: beebase
       POSTGRES_PASSWORD: ${POSTGRES_MEDIA_PASSWORD:?set POSTGRES_MEDIA_PASSWORD}
@@ -428,15 +493,24 @@ services:
   # No host port published, no AUTH (the app doesn't support it yet -
   # see the deployment report's risk list) - network isolation on the
   # internal-only `beebase` network is the control here. AOF persistence
-  # is enabled: not required for correctness (a lost session marker just
-  # costs the affected user one extra refresh round-trip - see
-  # beebase-auth-service's issueSession, which re-Activates on every
-  # login/refresh/setup), but cheap enough to avoid that blip on restart.
+  # is disabled (t4g.micro sizing: AOF's continuous rewrite/fsync
+  # overhead isn't worth it here) - not required for correctness either
+  # way, since a lost session marker just costs the affected user one
+  # extra refresh round-trip (see beebase-auth-service's issueSession,
+  # which re-Activates on every login/refresh/setup). The image's default
+  # periodic RDB snapshotting (to the `redis-data` volume) is left as-is:
+  # near-zero cost given how tiny this dataset is, and it's a free bit of
+  # extra durability on top of the documented in-app fallback.
+  # maxmemory bounds the dataset itself (one small key per active user,
+  # TTL-bound) well under the container's own mem_limit below, which
+  # covers Redis's own process/connection overhead on top of that.
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--maxmemory", "32mb", "--maxmemory-policy", "allkeys-lru"]
+    mem_limit: 48m
+    mem_reservation: 16m
     volumes:
       - redis-data:/data
     networks: [beebase]
@@ -461,6 +535,7 @@ services:
   migrate-auth:
     image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-auth-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
     restart: "no"
+    mem_limit: 64m
     command:
       - -path=/migrations
       - -database=postgres://beebase:${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}@postgres-auth:5432/beebase_auth?sslmode=disable
@@ -479,6 +554,7 @@ services:
   migrate-apiary:
     image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-apiary-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
     restart: "no"
+    mem_limit: 64m
     command:
       - -path=/migrations
       - -database=postgres://beebase:${POSTGRES_APIARY_PASSWORD:?set POSTGRES_APIARY_PASSWORD}@postgres-apiary:5432/beebase_apiary?sslmode=disable
@@ -497,6 +573,7 @@ services:
   migrate-hive:
     image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-hive-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
     restart: "no"
+    mem_limit: 64m
     command:
       - -path=/migrations
       - -database=postgres://beebase:${POSTGRES_HIVE_PASSWORD:?set POSTGRES_HIVE_PASSWORD}@postgres-hive:5432/beebase_hive?sslmode=disable
@@ -515,6 +592,7 @@ services:
   migrate-inspection:
     image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-inspection-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
     restart: "no"
+    mem_limit: 64m
     command:
       - -path=/migrations
       - -database=postgres://beebase:${POSTGRES_INSPECTION_PASSWORD:?set POSTGRES_INSPECTION_PASSWORD}@postgres-inspection:5432/beebase_inspection?sslmode=disable
@@ -533,6 +611,7 @@ services:
   migrate-media:
     image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-media-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
     restart: "no"
+    mem_limit: 64m
     command:
       - -path=/migrations
       - -database=postgres://beebase:${POSTGRES_MEDIA_PASSWORD:?set POSTGRES_MEDIA_PASSWORD}@postgres-media:5432/beebase_media?sslmode=disable
