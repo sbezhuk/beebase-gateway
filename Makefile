@@ -1,5 +1,5 @@
 .PHONY: run build fmt vet test lint tidy \
-	up down build-all logs ps
+	up down build-all logs ps deploy-test
 
 APP_NAME := gateway
 BIN_DIR  := bin
@@ -39,3 +39,6 @@ logs: ## Tail every service's logs.
 
 ps: ## Show the status of every service in the stack.
 	docker compose ps
+
+deploy-test: ## Run deploy/lib/manifest.sh + deploy.sh + compose config tests (no AWS/EC2 needed).
+	bash deploy/tests/run_all.sh

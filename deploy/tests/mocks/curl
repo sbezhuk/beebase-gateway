@@ -1,0 +1,11 @@
+#!/bin/bash
+# Fake curl: only understands the two IMDSv2 calls deploy.sh makes.
+args="$*"
+case "${args}" in
+  *"latest/api/token"*) echo "FAKE-IMDS-TOKEN" ;;
+  *"placement/region"*) echo "eu-central-1" ;;
+  *)
+    echo "mock curl: unexpected invocation: ${args}" >&2
+    exit 1
+    ;;
+esac

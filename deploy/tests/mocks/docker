@@ -1,0 +1,63 @@
+#!/bin/bash
+# Fake docker CLI for deploy.sh's integration tests. Logs every
+# `compose` invocation to $MOCK_DOCKER_LOG (if set) so a test can assert
+# deploy.sh never reached "up"/"pull" after an earlier failure, then
+# answers just enough to let deploy.sh's own control flow (health-check
+# polling, migrations, smoke tests) reach a real conclusion.
+
+if [ "$1" = "login" ]; then
+  cat >/dev/null # consume the piped ECR password, same as the real CLI
+  exit 0
+fi
+
+if [ "$1" != "compose" ]; then
+  echo "mock docker: unexpected invocation: $*" >&2
+  exit 1
+fi
+shift
+
+# Drop the -f <file> and --env-file <file> flags deploy.sh always passes.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -f|--env-file) shift 2 ;;
+    *) break ;;
+  esac
+done
+
+if [ -n "${MOCK_DOCKER_LOG:-}" ]; then
+  echo "compose $*" >>"${MOCK_DOCKER_LOG}"
+fi
+
+sub="$1"; shift || true
+
+case "${sub}" in
+  pull) exit 0 ;;
+  up) exit 0 ;;
+  run) exit 0 ;;
+
+  ps)
+    if [ "$1" = "--format" ]; then
+      # ps --format json <service>: report healthy immediately, no
+      # simulated startup delay needed for the test.
+      echo '{"Health":"healthy"}'
+    else
+      echo "NAME  STATUS"
+    fi
+    exit 0
+    ;;
+
+  exec)
+    # exec -T gateway wget -qO- <url>
+    url="${*: -1}"
+    case "${url}" in
+      *jwks.json*) echo '{"keys":[{"kid":"fake"}]}' ;;
+      *) echo '{"status":"ok"}' ;;
+    esac
+    exit 0
+    ;;
+
+  *)
+    echo "mock docker compose: unhandled subcommand '${sub}': $*" >&2
+    exit 1
+    ;;
+esac

@@ -6,10 +6,20 @@
 # Every image reference and secret comes from the environment - this
 # file has no defaults that silently fall back to "latest" or to a
 # built-in password, by design:
-#   - ECR_REGISTRY, IMAGE_TAG: required, no default (see the ${VAR:?...}
-#     guards below) - a missing IMAGE_TAG fails the `docker compose`
-#     invocation instead of silently reusing whatever "latest" happens
-#     to resolve to.
+#   - ECR_REGISTRY: required, no default (see the ${VAR:?...} guards
+#     below).
+#   - Each of the 7 services is an independent Git repository with its
+#     own pipeline and its own commit SHA, so there is deliberately no
+#     single shared IMAGE_TAG - each service has its own
+#     <SERVICE>_IMAGE_TAG variable (GATEWAY_IMAGE_TAG, AUTH_IMAGE_TAG,
+#     APIARY_IMAGE_TAG, HIVE_IMAGE_TAG, INSPECTION_IMAGE_TAG,
+#     MEDIA_IMAGE_TAG, STATISTICS_IMAGE_TAG), all required, none
+#     defaulted. Together, one value per variable, they form a release
+#     manifest - see deploy/lib/manifest.sh and deploy/deploy.sh, which
+#     is the only thing that ever sets them. RELEASE is the manifest's
+#     own identifier (e.g. 2026.09.07-1), used only for log-stream
+#     naming on services that have no image tag of their own (edge,
+#     postgres, redis) - it never substitutes for an image tag.
 #   - Secrets (JWT_PRIVATE_KEY, TOTP_ENCRYPTION_KEY, POSTGRES_*_PASSWORD)
 #     come from a .env file deploy.sh generates fresh from SSM Parameter
 #     Store on every deploy - never committed, never baked into an
@@ -72,13 +82,13 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/infra
-        awslogs-stream: edge-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: edge-${RELEASE:?set RELEASE to the release manifest identifier}
         awslogs-create-group: "true"
 
   # --- gateway: sole application entry point behind edge ---
 
   gateway:
-    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-gateway:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-gateway:${GATEWAY_IMAGE_TAG:?set GATEWAY_IMAGE_TAG to gateway's Git commit SHA}
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
@@ -114,13 +124,13 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-gateway
-        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: app-${GATEWAY_IMAGE_TAG:?set GATEWAY_IMAGE_TAG to gateway's Git commit SHA}
         awslogs-create-group: "true"
 
   # --- auth-service ---
 
   auth-service:
-    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-auth-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-auth-service:${AUTH_IMAGE_TAG:?set AUTH_IMAGE_TAG to auth-service's Git commit SHA}
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
@@ -162,13 +172,13 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-auth-service
-        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: app-${AUTH_IMAGE_TAG:?set AUTH_IMAGE_TAG to auth-service's Git commit SHA}
         awslogs-create-group: "true"
 
   # --- apiary-service ---
 
   apiary-service:
-    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-apiary-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-apiary-service:${APIARY_IMAGE_TAG:?set APIARY_IMAGE_TAG to apiary-service's Git commit SHA}
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
@@ -199,13 +209,13 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-apiary-service
-        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: app-${APIARY_IMAGE_TAG:?set APIARY_IMAGE_TAG to apiary-service's Git commit SHA}
         awslogs-create-group: "true"
 
   # --- hive-service ---
 
   hive-service:
-    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-hive-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-hive-service:${HIVE_IMAGE_TAG:?set HIVE_IMAGE_TAG to hive-service's Git commit SHA}
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
@@ -238,13 +248,13 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-hive-service
-        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: app-${HIVE_IMAGE_TAG:?set HIVE_IMAGE_TAG to hive-service's Git commit SHA}
         awslogs-create-group: "true"
 
   # --- inspection-service ---
 
   inspection-service:
-    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-inspection-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-inspection-service:${INSPECTION_IMAGE_TAG:?set INSPECTION_IMAGE_TAG to inspection-service's Git commit SHA}
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
@@ -277,13 +287,13 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-inspection-service
-        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: app-${INSPECTION_IMAGE_TAG:?set INSPECTION_IMAGE_TAG to inspection-service's Git commit SHA}
         awslogs-create-group: "true"
 
   # --- media-service ---
 
   media-service:
-    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-media-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-media-service:${MEDIA_IMAGE_TAG:?set MEDIA_IMAGE_TAG to media-service's Git commit SHA}
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
@@ -319,13 +329,13 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-media-service
-        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: app-${MEDIA_IMAGE_TAG:?set MEDIA_IMAGE_TAG to media-service's Git commit SHA}
         awslogs-create-group: "true"
 
   # --- statistics-service (stateless, no database of its own) ---
 
   statistics-service:
-    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-statistics-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-statistics-service:${STATISTICS_IMAGE_TAG:?set STATISTICS_IMAGE_TAG to statistics-service's Git commit SHA}
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
@@ -356,7 +366,7 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-statistics-service
-        awslogs-stream: app-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: app-${STATISTICS_IMAGE_TAG:?set STATISTICS_IMAGE_TAG to statistics-service's Git commit SHA}
         awslogs-create-group: "true"
 
   # --- PostgreSQL, one container per bounded context, each on its own
@@ -387,7 +397,7 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/infra
-        awslogs-stream: postgres-auth-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: postgres-auth-${RELEASE:?set RELEASE to the release manifest identifier}
         awslogs-create-group: "true"
 
   postgres-apiary:
@@ -413,7 +423,7 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/infra
-        awslogs-stream: postgres-apiary-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: postgres-apiary-${RELEASE:?set RELEASE to the release manifest identifier}
         awslogs-create-group: "true"
 
   postgres-hive:
@@ -439,7 +449,7 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/infra
-        awslogs-stream: postgres-hive-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: postgres-hive-${RELEASE:?set RELEASE to the release manifest identifier}
         awslogs-create-group: "true"
 
   postgres-inspection:
@@ -465,7 +475,7 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/infra
-        awslogs-stream: postgres-inspection-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: postgres-inspection-${RELEASE:?set RELEASE to the release manifest identifier}
         awslogs-create-group: "true"
 
   postgres-media:
@@ -491,7 +501,7 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/infra
-        awslogs-stream: postgres-media-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: postgres-media-${RELEASE:?set RELEASE to the release manifest identifier}
         awslogs-create-group: "true"
 
   # --- Redis: shared single-active-session store ---
@@ -530,7 +540,7 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/infra
-        awslogs-stream: redis-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: redis-${RELEASE:?set RELEASE to the release manifest identifier}
         awslogs-create-group: "true"
 
   # --- Migrations: one-shot per database, gated before its app service
@@ -539,7 +549,7 @@ services:
   #     alongside the app image - the host never checks out source. ---
 
   migrate-auth:
-    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-auth-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-auth-service:${AUTH_IMAGE_TAG:?set AUTH_IMAGE_TAG to auth-service's Git commit SHA}-migrate
     restart: "no"
     mem_limit: 64m
     command:
@@ -554,11 +564,11 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-auth-service
-        awslogs-stream: migrate-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: migrate-${AUTH_IMAGE_TAG:?set AUTH_IMAGE_TAG to auth-service's Git commit SHA}
         awslogs-create-group: "true"
 
   migrate-apiary:
-    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-apiary-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-apiary-service:${APIARY_IMAGE_TAG:?set APIARY_IMAGE_TAG to apiary-service's Git commit SHA}-migrate
     restart: "no"
     mem_limit: 64m
     command:
@@ -573,11 +583,11 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-apiary-service
-        awslogs-stream: migrate-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: migrate-${APIARY_IMAGE_TAG:?set APIARY_IMAGE_TAG to apiary-service's Git commit SHA}
         awslogs-create-group: "true"
 
   migrate-hive:
-    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-hive-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-hive-service:${HIVE_IMAGE_TAG:?set HIVE_IMAGE_TAG to hive-service's Git commit SHA}-migrate
     restart: "no"
     mem_limit: 64m
     command:
@@ -592,11 +602,11 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-hive-service
-        awslogs-stream: migrate-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: migrate-${HIVE_IMAGE_TAG:?set HIVE_IMAGE_TAG to hive-service's Git commit SHA}
         awslogs-create-group: "true"
 
   migrate-inspection:
-    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-inspection-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-inspection-service:${INSPECTION_IMAGE_TAG:?set INSPECTION_IMAGE_TAG to inspection-service's Git commit SHA}-migrate
     restart: "no"
     mem_limit: 64m
     command:
@@ -611,11 +621,11 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-inspection-service
-        awslogs-stream: migrate-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: migrate-${INSPECTION_IMAGE_TAG:?set INSPECTION_IMAGE_TAG to inspection-service's Git commit SHA}
         awslogs-create-group: "true"
 
   migrate-media:
-    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-media-service:${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}-migrate
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-media-service:${MEDIA_IMAGE_TAG:?set MEDIA_IMAGE_TAG to media-service's Git commit SHA}-migrate
     restart: "no"
     mem_limit: 64m
     command:
@@ -630,7 +640,7 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-media-service
-        awslogs-stream: migrate-${IMAGE_TAG:?set IMAGE_TAG to a Git commit SHA}
+        awslogs-stream: migrate-${MEDIA_IMAGE_TAG:?set MEDIA_IMAGE_TAG to media-service's Git commit SHA}
         awslogs-create-group: "true"
 
 networks:

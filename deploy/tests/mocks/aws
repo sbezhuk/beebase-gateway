@@ -1,0 +1,59 @@
+#!/bin/bash
+# Fake AWS CLI for deploy.sh's integration tests. Understands exactly
+# the handful of subcommands deploy.sh calls; everything else is a
+# test-harness bug, not something to guess at, so it errors loudly.
+#
+# MOCK_MISSING_IMAGES (env var, optional): newline-separated
+# "repo:tag" entries that `ecr describe-images` should report as
+# missing (ECR's real ImageNotFoundException maps to a non-zero exit).
+
+cmd="$1"; sub="$2"; shift 2 || true
+
+case "${cmd} ${sub}" in
+  "sts get-caller-identity")
+    echo "123456789012"
+    ;;
+
+  "ecr get-login-password")
+    echo "fake-ecr-password"
+    ;;
+
+  "ecr describe-images")
+    repo="" tag=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --repository-name) repo="$2"; shift 2 ;;
+        --image-ids) tag="${2#imageTag=}"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    if printf '%s\n' "${MOCK_MISSING_IMAGES:-}" | grep -qxF "${repo}:${tag}"; then
+      echo "mock aws: An error occurred (ImageNotFoundException) when calling the DescribeImages operation: ${repo}:${tag} not found" >&2
+      exit 254
+    fi
+    echo '{"imageDetails":[{"imageTags":["'"${tag}"'"]}]}'
+    ;;
+
+  "ssm get-parameters-by-path")
+    cat <<'JSON'
+{
+  "Parameters": [
+    {"Name": "/beebase/prod/PUBLIC_DOMAIN", "Value": "api.beebase.club"},
+    {"Name": "/beebase/prod/STORAGE_BUCKET", "Value": "beebase-prod"},
+    {"Name": "/beebase/prod/JWT_PRIVATE_KEY", "Value": "fake-jwt-key"},
+    {"Name": "/beebase/prod/TOTP_ENCRYPTION_KEY", "Value": "fake-totp-key"},
+    {"Name": "/beebase/prod/POSTGRES_AUTH_PASSWORD", "Value": "x"},
+    {"Name": "/beebase/prod/POSTGRES_APIARY_PASSWORD", "Value": "x"},
+    {"Name": "/beebase/prod/POSTGRES_HIVE_PASSWORD", "Value": "x"},
+    {"Name": "/beebase/prod/POSTGRES_INSPECTION_PASSWORD", "Value": "x"},
+    {"Name": "/beebase/prod/POSTGRES_MEDIA_PASSWORD", "Value": "x"}
+  ]
+}
+JSON
+    ;;
+
+  *)
+    echo "mock aws: unhandled invocation: ${cmd} ${sub} $*" >&2
+    exit 1
+    ;;
+esac
