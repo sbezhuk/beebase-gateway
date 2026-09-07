@@ -1,9 +1,9 @@
 #!/bin/bash
 # Deploys one immutable release manifest to the BeeBase production
-# stack. Invoked on the EC2 host itself, normally via an Azure DevOps
-# pipeline's `aws ssm send-command` (AWS-RunShellScript) targeting this
-# instance - see beebase-gateway/deploy/azure-pipelines-release.yml for
-# the exact invocation.
+# stack. Invoked on the EC2 host itself, normally via the
+# production-release GitHub Actions workflow's `aws ssm send-command`
+# (AWS-RunShellScript) targeting this instance - see
+# .github/workflows/production-release.yml for the exact invocation.
 #
 # BeeBase is 7 independent Git repositories, each with its own pipeline
 # and its own commit SHA - there is no single Git SHA that describes

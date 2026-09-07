@@ -126,20 +126,19 @@ a fallback, in development or in production.
 
 ## Production deployment
 
-BeeBase is **7 independent Git repositories**, each with its own Azure
-DevOps pipeline, its own commit history, and its own Git SHA. There is
-no single SHA that describes "the app" — a production release is the
-combination of one specific, independently-chosen image tag per
+BeeBase is **7 independent Git repositories**, each with its own
+GitHub Actions workflow, its own commit history, and its own Git SHA.
+There is no single SHA that describes "the app" — a production release
+is the combination of one specific, independently-chosen image tag per
 service, and deployment tooling treats that combination, not any one
 commit, as the unit that gets deployed.
 
 ### Per-service image tags
 
-Each service pipeline (`Test → Build → push`, defined once in
-[beebase-common's shared template](https://github.com/sbezhuk/beebase-common/blob/main/ci/azure-pipelines-service-template.yml)
-and extended by each repo's own `azure-pipelines.yml`) tags its image
-with its own full Git commit SHA — never `latest`, never a SHA
-belonging to a different repository:
+Each service repo has its own `.github/workflows/ci.yml`
+(`Test → Build → push`, triggered on push to `main`) that tags its
+image with its own full Git commit SHA (`${{ github.sha }}`) — never
+`latest`, never a SHA belonging to a different repository:
 
 ```text
 beebase-gateway:5a066d9...
@@ -151,13 +150,21 @@ beebase-media-service:a5b903b...
 beebase-statistics-service:a0877a0...
 ```
 
-[docker-compose.prod.yml](docker-compose.prod.yml) reflects this
-directly: there is no shared `IMAGE_TAG`, only one variable per service
-(`GATEWAY_IMAGE_TAG`, `AUTH_IMAGE_TAG`, `APIARY_IMAGE_TAG`,
-`HIVE_IMAGE_TAG`, `INSPECTION_IMAGE_TAG`, `MEDIA_IMAGE_TAG`,
-`STATISTICS_IMAGE_TAG`), all required with no default. Migration images
-use the same variable, suffixed `-migrate` (e.g.
-`${AUTH_IMAGE_TAG}-migrate`).
+Each workflow authenticates to AWS via GitHub's OIDC federation
+(`aws-actions/configure-aws-credentials`, assuming the
+`beebase-prod-github-actions-ci` IAM role — see Terraform below) and
+builds for `linux/arm64` (EC2 is Graviton) with Buildx + QEMU, exactly
+like the retired Azure Pipelines template did. Services with a database
+(auth/apiary/hive/inspection/media) also push a `Dockerfile.migrate`
+image tagged `<sha>-migrate`.
+
+[docker-compose.prod.yml](docker-compose.prod.yml) reflects the
+per-service tagging directly: there is no shared `IMAGE_TAG`, only one
+variable per service (`GATEWAY_IMAGE_TAG`, `AUTH_IMAGE_TAG`,
+`APIARY_IMAGE_TAG`, `HIVE_IMAGE_TAG`, `INSPECTION_IMAGE_TAG`,
+`MEDIA_IMAGE_TAG`, `STATISTICS_IMAGE_TAG`), all required with no
+default. Migration images use the same variable, suffixed `-migrate`
+(e.g. `${AUTH_IMAGE_TAG}-migrate`).
 
 ### Release manifests
 
@@ -181,41 +188,52 @@ STATISTICS_IMAGE_TAG=a0877a0...
 ```
 
 `RELEASE` is an identifier for *this combination of versions* — a date
-plus an Azure DevOps Build ID, e.g. `2026.09.07-1` — not a Git SHA and
-not a substitute for one; it's only ever used for CloudWatch log stream
-naming on containers that have no image tag of their own (`edge`,
-`postgres-*`, `redis`). Manifests never contain secrets: those still
-come from AWS SSM Parameter Store on every deploy, exactly as before.
+plus the release workflow's run number, e.g. `2026.09.07-1` — not a Git
+SHA and not a substitute for one; it's only ever used for CloudWatch
+log stream naming on containers that have no image tag of their own
+(`edge`, `postgres-*`, `redis`). Manifests never contain secrets: those
+still come from AWS SSM Parameter Store on every deploy, exactly as
+before.
 
 Manifests are **immutable**: once `<release>.env` exists at
 `/opt/beebase/releases/`, nothing ever overwrites it — `deploy.sh`
-refuses to touch it, and the release pipeline refuses to create a
+refuses to touch it, and the release workflow refuses to create a
 release id that already exists. Every past release stays on disk,
 which is what makes rollback possible (see below).
 
-### The release pipeline
+### The production release workflow
 
-[deploy/azure-pipelines-release.yml](deploy/azure-pipelines-release.yml)
-is a separate Azure DevOps pipeline (registered independently from this
-repo's own `Test → Build → push` pipeline) that:
+[.github/workflows/production-release.yml](.github/workflows/production-release.yml)
+is a separate, manual (`workflow_dispatch`-only) GitHub Actions workflow
+in this repo — distinct from this repo's own `ci.yml` — that:
 
-1. Reads each of the 7 service pipelines' `resources.pipeline.<alias>.sourceCommit`
-   — the exact SHA that pipeline most recently built and pushed —
-   **independently per service**, never assuming they match.
-2. Writes those 7 tags into a new, immutable release manifest.
-3. Ships the manifest to the EC2 host and runs `deploy.sh` against it,
-   via the same `aws ssm send-command` + poll pattern each service
-   pipeline used to run individually — see the flow below.
+1. Takes the exact image tag for all 7 services as explicit inputs
+   (`gateway_image_tag`, `auth_image_tag`, ...) — **never** assumes any
+   two repositories share a SHA, and never auto-selects `latest`.
+2. Builds and validates a new, immutable release manifest from those
+   inputs, reusing `deploy/lib/manifest.sh`'s own validation rules
+   (the workflow `source`s that file directly rather than
+   reimplementing its rules).
+3. Verifies every one of those images — and every migrate image —
+   actually exists in ECR, and fails the run before anything is sent to
+   EC2 if any one of them is missing.
+4. Runs under the protected `production` GitHub Environment (see
+   "GitHub configuration required" below) — a required-reviewers rule
+   there gates both jobs on one manual approval.
+5. Ships the manifest to the EC2 host and runs `deploy.sh` against it,
+   via the same `aws ssm send-command` + poll pattern the old per-service
+   Azure Pipelines Deploy stage used to run individually.
 
 ```text
-Individual service pipelines (7x)
+Individual service workflows (7x, each its own repo)
   Test → Build → push image tagged with its own SHA
         │
         ▼
-Production release pipeline (run on demand, once every
-service you want released has a green Build on main)
-  resolve each service's latest SHA independently
-  → write immutable release manifest
+Production release workflow (workflow_dispatch, operator supplies
+all 7 SHAs explicitly)
+  build + validate release manifest (deploy/lib/manifest.sh)
+  → verify every image + migrate image exists in ECR
+  → production Environment approval
   → send manifest + deploy.sh invocation to EC2 via SSM
         │
         ▼
@@ -226,9 +244,17 @@ deploy.sh <manifest>
   → mark this release `current`
 ```
 
-Each service's own pipeline no longer deploys anything by itself — it
-stops after pushing its image. Only the release pipeline ever calls
-`deploy.sh`, and only with a full 7-service manifest.
+Each service's own workflow only ever builds and pushes — it never
+deploys. Only the production release workflow ever calls `deploy.sh`,
+and only with a full 7-service manifest. `deploy.sh` itself is
+unchanged and unduplicated: the workflow orchestrates *when* it runs,
+never *what* it does.
+
+The workflow also accepts an optional `rollback_release` input (an
+existing release id already under `/opt/beebase/releases/`) that skips
+straight to calling `deploy.sh` against that manifest — no rebuild, no
+re-validation on the runner (deploy.sh re-validates on the host
+regardless), see Rollback below.
 
 ### Deploying and rolling back
 
@@ -250,11 +276,15 @@ updates `/opt/beebase/releases/current` to point at the manifest it
 just deployed. Any failure at any step aborts the deploy without
 touching the previously-running containers.
 
-**Rollback** is just deploying an older manifest — nothing is rebuilt:
+**Rollback** is just deploying an older manifest — nothing is rebuilt.
+Either run `deploy.sh` directly on the host:
 
 ```bash
 deploy.sh /opt/beebase/releases/2026.09.07-1.env   # redeploy exactly that combination of images
 ```
+
+or trigger the production release workflow with `rollback_release` set
+to `2026.09.07-1` and every `*_image_tag` input left blank.
 
 Since every past manifest stays on disk and every image is immutable in
 ECR (`image_tag_mutability = "IMMUTABLE"`, enforced in Terraform), this
@@ -267,42 +297,93 @@ manifest is live.
 
 - Secrets (`JWT_PRIVATE_KEY`, `TOTP_ENCRYPTION_KEY`, `POSTGRES_*_PASSWORD`,
   ...) come from AWS SSM Parameter Store under `/beebase/prod/*` on
-  every deploy — never from Git, release manifests, or Docker images.
-- Images come from ECR, one repository per service, pulled with the EC2
-  instance's IAM role — no static AWS credentials anywhere on the host.
+  every deploy — never from Git, GitHub Actions, release manifests, or
+  Docker images. GitHub Actions never has read access to `/beebase/prod/*`
+  — see the IAM policies in `terraform/modules/github-oidc`.
+- Images come from ECR, one repository per service. CI pushes with the
+  `beebase-prod-github-actions-ci` role (push-only, scoped to the 7
+  BeeBase ECR repositories); the production host pulls with its own EC2
+  IAM role, unrelated to either GitHub Actions role, no static AWS
+  credentials anywhere.
+- No AWS access keys are ever stored in GitHub: both GitHub Actions IAM
+  roles are assumed via OIDC federation
+  (`token.actions.githubusercontent.com`), scoped by repository and (for
+  the release role) by GitHub Environment — see "AWS IAM / OIDC" below.
 - `latest` is never used anywhere in this pipeline: `deploy.sh` rejects
   it outright, `docker-compose.prod.yml` has no image reference without
   a `${...:?...}`-guarded tag variable, and a missing ECR image fails
-  the deploy rather than falling back to whatever tag happens to
-  already be running.
+  the deploy (or the release workflow, before it ever reaches EC2)
+  rather than falling back to whatever tag happens to already be
+  running.
 
 ### Tests
 
 ```bash
-make deploy-test   # deploy/tests/run_all.sh — manifest parsing/validation,
-                    # docker compose config, and a mocked deploy.sh run
-                    # (no AWS account or Docker daemon required)
+make deploy-test   # deploy/tests/run_all.sh:
+                    #   - manifest parsing/validation (deploy/lib/manifest.sh)
+                    #   - docker compose config resolves each service's own tag
+                    #   - a mocked deploy.sh run (fail-fast on a missing ECR image, success path)
+                    #   - every service's .github/workflows/ci.yml against the CI checklist
+                    #   - .github/workflows/production-release.yml against the release checklist
+                    # No AWS account or Docker daemon required.
 ```
 
-### Azure DevOps configuration required (manual, one-time)
+`actionlint` (https://github.com/rhysd/actionlint) is recommended for
+validating workflow YAML/embedded shell beyond what `make deploy-test`
+checks structurally: `actionlint .github/workflows/*.yml`.
 
-- The "AWS Toolkit for Azure DevOps" marketplace extension, plus an
-  `AWS-BeeBase-OIDC` service connection (OIDC/workload-identity
-  federation — no long-lived AWS keys stored in Azure DevOps).
-- A `beebase-prod-pipeline` variable group with `AWS_REGION`,
-  `AWS_ACCOUNT_ID`, `EC2_INSTANCE_ID`.
-- A `beebase-production` Environment (used by both the per-service
-  Build pipelines' approval gate history and the release pipeline).
-- Each of the 7 service repos' `azure-pipelines.yml` already exists and
-  extends `beebase-common`'s shared template — no change needed beyond
-  bumping the `ref:` tag when the template changes (see
-  [beebase-common's CHANGELOG/tags](https://github.com/sbezhuk/beebase-common/tags)).
-- **New:** register `deploy/azure-pipelines-release.yml` from this repo
-  as its own separate Azure DevOps pipeline (distinct from this repo's
-  existing `Test → Build → push` pipeline), and grant it permission to
-  consume the other 6 services' pipelines as resources (Azure DevOps
-  prompts for this authorization the first time the pipeline resolves a
-  resource it doesn't yet have access to).
+### AWS IAM / OIDC (Terraform)
+
+`terraform/modules/github-oidc` creates:
+
+- One `aws_iam_openid_connect_provider` for
+  `token.actions.githubusercontent.com` (thumbprint fetched live via the
+  `tls` provider, not hardcoded).
+- **`<name_prefix>-github-actions-ci`** — assumable only by a workflow
+  run on `main` in one of the 7 service repos
+  (`repo:<org>/<repo>:ref:refs/heads/main`). Permissions: ECR
+  authenticate + push, scoped to the 7 BeeBase ECR repository ARNs.
+  Nothing else.
+- **`<name_prefix>-github-actions-release`** — assumable only by a
+  workflow run in `beebase-gateway` under the `production` GitHub
+  Environment (`repo:<org>/beebase-gateway:environment:production`).
+  Permissions: `ecr:DescribeImages`/`DescribeRepositories` (read-only,
+  scoped to the 7 repo ARNs), `ssm:SendCommand` (scoped to the one
+  production EC2 instance + the `AWS-RunShellScript` document),
+  `ssm:GetCommandInvocation` (SSM supports no resource-level scoping for
+  this action — this is the narrowest it can be), and
+  `sts:GetCallerIdentity`. No EC2 administration, no
+  `/beebase/prod/*` SSM access, no S3 access.
+
+Both roles are wired into `terraform/environments/prod/main.tf`
+(`module "github_oidc"`), reusing the existing `local.service_names`
+list and the existing `module.ecr`/`module.ec2` outputs — no new ECR
+repositories, no EC2/SSM/S3 redesign.
+
+### GitHub configuration required (manual, one-time)
+
+- Run `terraform apply` (see `terraform/environments/prod`) to create
+  the OIDC provider and the two IAM roles, then read
+  `github_actions_ci_role_arn` and `github_actions_release_role_arn`
+  from its outputs.
+- In **each of the 7 service repos**, add a repository variable (not a
+  secret — a role ARN isn't sensitive) `AWS_CI_ROLE_ARN` set to
+  `github_actions_ci_role_arn`. (If these ever move under a GitHub
+  *organization* rather than a personal account, this can become one
+  org-level variable instead of 7 repo-level copies.)
+- In **beebase-gateway only**, add two more repository variables:
+  `AWS_RELEASE_ROLE_ARN` (`github_actions_release_role_arn`) and
+  `EC2_INSTANCE_ID` (also not secrets).
+- In **beebase-gateway**, create a GitHub Environment named
+  `production` (Settings → Environments) and add at least one required
+  reviewer — this is what gates the release workflow on a manual
+  approval; Terraform's trust policy already restricts the release IAM
+  role to workflow runs under this exact Environment name.
+- None of the above are GitHub *Secrets* — no AWS credential, of any
+  kind, is ever stored in this repo. The only real secrets in this
+  whole system (`JWT_PRIVATE_KEY`, `POSTGRES_*_PASSWORD`, ...) live
+  exclusively in AWS SSM Parameter Store and are never exposed to
+  GitHub Actions at all.
 
 ### EC2 bootstrap requirements
 
@@ -324,11 +405,13 @@ internal/
   config/                   environment-based configuration
   proxy/                     builds a reverse proxy to one upstream service
   transport/http/           chi router: health/ready + proxy mounts
+.github/workflows/
+  ci.yml                     this repo's own Test → Build → push (gateway image)
+  production-release.yml     resolves all 7 services' SHAs into a manifest, deploys it
 deploy/
   deploy.sh                  deploys one release manifest to the production stack
-  azure-pipelines-release.yml  resolves all 7 services' SHAs into a manifest, deploys it
   lib/manifest.sh             manifest parsing/validation (shared by deploy.sh and its tests)
-  tests/                      deploy-tooling tests — see `make deploy-test`
+  tests/                      deploy-tooling + workflow tests — see `make deploy-test`
   Caddyfile, backup-postgres.sh, healthcheck-containers.sh, systemd/
 ```
 
