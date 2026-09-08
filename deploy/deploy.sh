@@ -204,8 +204,9 @@ TMP_DEPLOY_ENV_FILE="$(mktemp "${CONFIG_DIR}/.deploy.env.XXXXXX")"
   # anywhere else, including this script's own log output.
   for service in "${!ENV_DB_INTERPOLATION_KEY[@]}"; do
     service_file="$(env_config::file_path "${CONFIG_DIR}" "${service}")"
-    password="$(env_config::read_value "${service_file}" "POSTGRES_PASSWORD")"
-    echo "${ENV_DB_INTERPOLATION_KEY[${service}]}=${password}"
+    password_key="${ENV_DB_INTERPOLATION_KEY[${service}]}"
+    password="$(env_config::read_value "${service_file}" "${password_key}")"
+    echo "${password_key}=${password}"
   done
 } >"${TMP_DEPLOY_ENV_FILE}"
 
