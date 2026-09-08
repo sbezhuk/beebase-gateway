@@ -8,9 +8,11 @@
 # missing (ECR's real ImageNotFoundException maps to a non-zero exit).
 #
 # MOCK_SSM_INCLUDE_SECRETS (env var, optional, "1" to enable): makes
-# `ssm get-parameters-by-path` also return the seven production secrets,
-# simulating a stale/rogue SecureString left over under /beebase/prod -
-# deploy.sh must ignore these entirely (see test_deploy_integration.sh).
+# `ssm get-parameters-by-path` also return a stale/rogue production
+# secret and a stale STORAGE_BUCKET left over under /beebase/prod from
+# before the per-service .env migration - deploy.sh must ignore both
+# entirely and only ever accept PUBLIC_DOMAIN from SSM (see
+# test_deploy_integration.sh).
 
 cmd="$1"; sub="$2"; shift 2 || true
 
@@ -45,7 +47,7 @@ case "${cmd} ${sub}" in
 {
   "Parameters": [
     {"Name": "/beebase/prod/PUBLIC_DOMAIN", "Value": "api.beebase.club"},
-    {"Name": "/beebase/prod/STORAGE_BUCKET", "Value": "beebase-prod"},
+    {"Name": "/beebase/prod/STORAGE_BUCKET", "Value": "rogue-ssm-bucket"},
     {"Name": "/beebase/prod/JWT_PRIVATE_KEY", "Value": "rogue-ssm-jwt-key"},
     {"Name": "/beebase/prod/TOTP_ENCRYPTION_KEY", "Value": "rogue-ssm-totp-key"},
     {"Name": "/beebase/prod/POSTGRES_AUTH_PASSWORD", "Value": "rogue-ssm-password"}
@@ -56,8 +58,7 @@ JSON
       cat <<'JSON'
 {
   "Parameters": [
-    {"Name": "/beebase/prod/PUBLIC_DOMAIN", "Value": "api.beebase.club"},
-    {"Name": "/beebase/prod/STORAGE_BUCKET", "Value": "beebase-prod"}
+    {"Name": "/beebase/prod/PUBLIC_DOMAIN", "Value": "api.beebase.club"}
   ]
 }
 JSON

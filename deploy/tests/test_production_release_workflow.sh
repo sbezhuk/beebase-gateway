@@ -96,6 +96,18 @@ else
   check "never uses 'latest' as an image tag" 1
 fi
 
+# --- every one of the 7 services' production .env files is validated
+#     on the host before any image/manifest work happens, reusing
+#     deploy/lib/env_config.sh's own validate_all rather than
+#     reimplementing the required-key list in the workflow (which would
+#     drift from deploy.sh's own checks) ---
+
+grep -qF "env_config::validate_all" "${WORKFLOW}"
+check "validates every service's .env via env_config::validate_all before anything else" $([ $? -eq 0 ] && echo 1 || echo 0)
+
+grep -qF "source /opt/beebase/deploy/lib/env_config.sh" "${WORKFLOW}"
+check "sources the deployment bundle's own env_config.sh rather than reimplementing validation" $([ $? -eq 0 ] && echo 1 || echo 0)
+
 # --- SSM deployment uses the generated manifest, deploy.sh is the only
 #     deployment logic invoked (not reimplemented here) ---
 

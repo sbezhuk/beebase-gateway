@@ -2,8 +2,11 @@
 # End-to-end tests for deploy.sh itself, with aws/docker/curl replaced
 # by the scripts in deploy/tests/mocks/ - no real AWS account or Docker
 # daemon involved. Complements test_manifest.sh (pure manifest parsing)
-# by exercising deploy.sh's actual control flow: ECR image-existence
-# verification, fail-fast ordering, and the success path.
+# and test_env_config.sh (pure per-service validation) by exercising
+# deploy.sh's actual control flow: ECR image-existence verification,
+# fail-fast ordering, the per-service config validation gate, the
+# deploy.env regeneration, the rollback config-snapshot/restore cycle,
+# and the success path.
 set -uo pipefail
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,43 +22,60 @@ fi
 PASS=0
 FAIL=0
 
-# Fake values for the seven secrets deploy.sh must now source exclusively
-# from the production .env - never from SSM. Distinct per key so a test
-# can tell them apart in the resulting .env.
-seed_secrets_env() {
-  local file="$1"
-  cat >"${file}" <<'EOF'
-POSTGRES_AUTH_PASSWORD=fake-auth-pw
-POSTGRES_APIARY_PASSWORD=fake-apiary-pw
-POSTGRES_HIVE_PASSWORD=fake-hive-pw
-POSTGRES_INSPECTION_PASSWORD=fake-inspection-pw
-POSTGRES_MEDIA_PASSWORD=fake-media-pw
-TOTP_ENCRYPTION_KEY=fake-totp-key
+# seed_complete_service_config <config-dir>
+# Seeds all 7 services' production .env files, complete and mode 0600 -
+# the happy-path starting point most tests build on. Distinct fake
+# values per service/key so a test can tell them apart afterwards.
+seed_complete_service_config() {
+  local dir="$1"
+  mkdir -p "${dir}"
+
+  : >"${dir}/gateway.env"
+  cat >"${dir}/auth.env" <<'EOF'
+POSTGRES_PASSWORD=fake-auth-pw
 JWT_PRIVATE_KEY=fake-jwt-key
+TOTP_ENCRYPTION_KEY=fake-totp-key
 EOF
-  chmod 600 "${file}"
+  echo "POSTGRES_PASSWORD=fake-apiary-pw" >"${dir}/apiary.env"
+  echo "POSTGRES_PASSWORD=fake-hive-pw" >"${dir}/hive.env"
+  echo "POSTGRES_PASSWORD=fake-inspection-pw" >"${dir}/inspection.env"
+  cat >"${dir}/media.env" <<'EOF'
+POSTGRES_PASSWORD=fake-media-pw
+STORAGE_BUCKET=fake-bucket
+EOF
+  : >"${dir}/statistics.env"
+
+  chmod 600 "${dir}"/*.env
 }
+
+ALL_FAKE_SECRETS="fake-auth-pw|fake-apiary-pw|fake-hive-pw|fake-inspection-pw|fake-media-pw|fake-totp-key|fake-jwt-key"
 
 # run_deploy <manifest-file> - invokes deploy.sh with a fresh, isolated
 # /opt/beebase-style layout under a temp dir and mocked aws/docker/curl
-# on PATH. Sets OUT, RC and DOCKER_LOG for the caller to inspect.
+# on PATH. Sets OUT, RC, DOCKER_LOG and DEPLOY_ROOT for the caller to
+# inspect.
 #
-# By default, seeds config/.env with a complete set of the seven
-# production secrets first, since deploy.sh now requires that file to
-# already exist - set PRESEED_ENV_FILE=none to simulate a host where it
-# hasn't been provisioned yet, or PRESEED_ENV_FILE=<path> to seed from a
-# specific file instead (e.g. one missing a key).
+# By default, seeds config/ with a complete set of all 7 services'
+# production .env files first, since deploy.sh now requires every one of
+# them to already exist - set PRESEED_MODE=none to simulate a host where
+# none has been provisioned yet, or PRESEED_MODE=reuse to keep whatever
+# is already sitting in ${REUSE_ROOT}/config (used by the rollback
+# tests, which need config to persist and mutate across two deploys of
+# the same root).
 run_deploy() {
   local manifest_file="$1"
   local root
-  root="$(mktemp -d)"
-  mkdir -p "${root}/config" "${root}/releases"
 
-  case "${PRESEED_ENV_FILE:-default}" in
-    none) : ;;
-    default) seed_secrets_env "${root}/config/.env" ;;
-    *) cp "${PRESEED_ENV_FILE}" "${root}/config/.env" && chmod 600 "${root}/config/.env" ;;
-  esac
+  if [ "${PRESEED_MODE:-default}" = "reuse" ]; then
+    root="${REUSE_ROOT}"
+  else
+    root="$(mktemp -d)"
+    mkdir -p "${root}/config" "${root}/releases"
+    case "${PRESEED_MODE:-default}" in
+      none) : ;;
+      default) seed_complete_service_config "${root}/config" ;;
+    esac
+  fi
 
   DOCKER_LOG="${root}/docker.log"
   : >"${DOCKER_LOG}"
@@ -68,6 +88,7 @@ run_deploy() {
     MOCK_DOCKER_LOG="${DOCKER_LOG}" \
     MOCK_MISSING_IMAGES="${MOCK_MISSING_IMAGES:-}" \
     MOCK_SSM_INCLUDE_SECRETS="${MOCK_SSM_INCLUDE_SECRETS:-0}" \
+    MOCK_EDGE_STATE="${MOCK_EDGE_STATE:-}" \
     bash "${DEPLOY_SH}" "${manifest_file}" 2>&1
   )
   RC=$?
@@ -213,11 +234,15 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-if [ -f "${DEPLOY_ROOT}/config/.env" ] && [ "$(stat -f '%OLp' "${DEPLOY_ROOT}/config/.env" 2>/dev/null || stat -c '%a' "${DEPLOY_ROOT}/config/.env")" = "600" ]; then
-  echo "PASS: generated .env is written with mode 0600"
+mode_of() {
+  stat -f '%OLp' "$1" 2>/dev/null || stat -c '%a' "$1"
+}
+
+if [ -f "${DEPLOY_ROOT}/config/deploy.env" ] && [ "$(mode_of "${DEPLOY_ROOT}/config/deploy.env")" = "600" ]; then
+  echo "PASS: generated deploy.env is written with mode 0600"
   PASS=$((PASS + 1))
 else
-  echo "FAIL: generated .env is written with mode 0600"
+  echo "FAIL: generated deploy.env is written with mode 0600"
   FAIL=$((FAIL + 1))
 fi
 
@@ -272,65 +297,99 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# --- 13. no production .env at all fails the deploy clearly, and never
-#     tries to paper over it by generating one from SSM ---
+# --- 13. no service .env files at all fails the deploy clearly, never
+#     touches the stack, and never tries to paper over it by generating
+#     any of them from SSM ---
 
-PRESEED_ENV_FILE=none run_deploy "${VALID_FILE}"
-if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -qi "production .env not found"; then
-  echo "PASS: missing production .env fails the deploy with a clear message"
+PRESEED_MODE=none run_deploy "${VALID_FILE}"
+if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -qi "does not exist"; then
+  echo "PASS: missing service .env files fail the deploy with a clear message"
   PASS=$((PASS + 1))
 else
-  echo "FAIL: missing production .env fails the deploy with a clear message (rc=${RC})"
+  echo "FAIL: missing service .env files fail the deploy with a clear message (rc=${RC})"
   echo "${OUT}"
   FAIL=$((FAIL + 1))
 fi
+if grep -qE '^compose .*(pull| up )' "${DOCKER_LOG}" 2>/dev/null; then
+  echo "FAIL: missing service .env files still resulted in a pull/up call - stack was touched"
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS: missing service .env files never touch the running stack"
+  PASS=$((PASS + 1))
+fi
 
-# --- 14. production .env missing one required secret fails the deploy,
-#     names the missing key, and never echoes any secret value (from the
-#     keys that ARE present) while doing so ---
+# --- 14. one service's .env missing one required key fails the deploy,
+#     names the missing key AND the file, and never echoes any secret
+#     value (from the keys that ARE present, in any service) while
+#     doing so ---
 
-MISSING_SECRET_ENV="${TMP_DIR}/missing-secret.env"
-seed_secrets_env "${MISSING_SECRET_ENV}"
-grep -v '^JWT_PRIVATE_KEY=' "${MISSING_SECRET_ENV}" >"${MISSING_SECRET_ENV}.tmp" && mv "${MISSING_SECRET_ENV}.tmp" "${MISSING_SECRET_ENV}"
+MISSING_SECRET_ROOT="$(mktemp -d)"
+mkdir -p "${MISSING_SECRET_ROOT}/config" "${MISSING_SECRET_ROOT}/releases"
+seed_complete_service_config "${MISSING_SECRET_ROOT}/config"
+grep -v '^JWT_PRIVATE_KEY=' "${MISSING_SECRET_ROOT}/config/auth.env" >"${MISSING_SECRET_ROOT}/config/auth.env.tmp"
+mv "${MISSING_SECRET_ROOT}/config/auth.env.tmp" "${MISSING_SECRET_ROOT}/config/auth.env"
+chmod 600 "${MISSING_SECRET_ROOT}/config/auth.env"
 
-PRESEED_ENV_FILE="${MISSING_SECRET_ENV}" run_deploy "${VALID_FILE}"
-if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -q "JWT_PRIVATE_KEY"; then
-  echo "PASS: production .env missing JWT_PRIVATE_KEY fails the deploy and names it"
+REUSE_ROOT="${MISSING_SECRET_ROOT}" PRESEED_MODE=reuse run_deploy "${VALID_FILE}"
+if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -q "auth.env" && echo "${OUT}" | grep -q "JWT_PRIVATE_KEY"; then
+  echo "PASS: auth.env missing JWT_PRIVATE_KEY fails the deploy and names both the file and the key"
   PASS=$((PASS + 1))
 else
-  echo "FAIL: production .env missing JWT_PRIVATE_KEY fails the deploy and names it (rc=${RC})"
+  echo "FAIL: auth.env missing JWT_PRIVATE_KEY fails the deploy and names both the file and the key (rc=${RC})"
   echo "${OUT}"
   FAIL=$((FAIL + 1))
 fi
-if echo "${OUT}" | grep -qF "fake-auth-pw"; then
+if echo "${OUT}" | grep -qE "${ALL_FAKE_SECRETS}"; then
   echo "FAIL: deploy output leaked a present secret's value while reporting a missing one"
   FAIL=$((FAIL + 1))
 else
   echo "PASS: deploy output never leaks a secret value while reporting a missing one"
   PASS=$((PASS + 1))
 fi
+rm -rf "${MISSING_SECRET_ROOT}"
 
-# --- 15. a successful deploy carries the seven secrets over from the
-#     production .env byte-for-byte - never regenerated, never touched ---
+# --- 15. wrong permissions on one service's .env fail the deploy
+#     before touching the stack, even though every key is present ---
+
+BAD_MODE_ROOT="$(mktemp -d)"
+mkdir -p "${BAD_MODE_ROOT}/config" "${BAD_MODE_ROOT}/releases"
+seed_complete_service_config "${BAD_MODE_ROOT}/config"
+chmod 644 "${BAD_MODE_ROOT}/config/media.env"
+
+REUSE_ROOT="${BAD_MODE_ROOT}" PRESEED_MODE=reuse run_deploy "${VALID_FILE}"
+if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -q "media.env" && echo "${OUT}" | grep -q "0600"; then
+  echo "PASS: media.env with mode 644 fails the deploy, naming the file and the required mode"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: media.env with mode 644 fails the deploy, naming the file and the required mode (rc=${RC})"
+  echo "${OUT}"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "${BAD_MODE_ROOT}"
+
+# --- 16. a successful deploy leaves every one of the 7 service .env
+#     files byte-for-byte untouched - deploy.sh only ever validates and
+#     reads them, never rewrites them ---
 
 run_deploy "${VALID_FILE}"
 if [ "${RC}" -eq 0 ] &&
-  grep -qxF "POSTGRES_AUTH_PASSWORD=fake-auth-pw" "${DEPLOY_ROOT}/config/.env" &&
-  grep -qxF "JWT_PRIVATE_KEY=fake-jwt-key" "${DEPLOY_ROOT}/config/.env" &&
-  grep -qxF "TOTP_ENCRYPTION_KEY=fake-totp-key" "${DEPLOY_ROOT}/config/.env"
+  grep -qxF "POSTGRES_PASSWORD=fake-auth-pw" "${DEPLOY_ROOT}/config/auth.env" &&
+  grep -qxF "JWT_PRIVATE_KEY=fake-jwt-key" "${DEPLOY_ROOT}/config/auth.env" &&
+  grep -qxF "TOTP_ENCRYPTION_KEY=fake-totp-key" "${DEPLOY_ROOT}/config/auth.env" &&
+  grep -qxF "STORAGE_BUCKET=fake-bucket" "${DEPLOY_ROOT}/config/media.env"
 then
-  echo "PASS: production secrets are carried over into the deployed .env unchanged"
+  echo "PASS: each service's production .env is left unchanged by a successful deploy"
   PASS=$((PASS + 1))
 else
-  echo "FAIL: production secrets are carried over into the deployed .env unchanged"
-  cat "${DEPLOY_ROOT}/config/.env"
+  echo "FAIL: each service's production .env is left unchanged by a successful deploy"
+  cat "${DEPLOY_ROOT}/config/auth.env" "${DEPLOY_ROOT}/config/media.env"
   FAIL=$((FAIL + 1))
 fi
 
-# --- 16. deploy.sh's own output never contains a secret's value, on a
+# --- 17. deploy.sh's own output never contains a secret's value, on a
 #     fully successful run ---
 
-if echo "${OUT}" | grep -qE "fake-auth-pw|fake-apiary-pw|fake-hive-pw|fake-inspection-pw|fake-media-pw|fake-totp-key|fake-jwt-key"; then
+if echo "${OUT}" | grep -qE "${ALL_FAKE_SECRETS}"; then
   echo "FAIL: deploy.sh output contains a secret value"
   FAIL=$((FAIL + 1))
 else
@@ -338,34 +397,211 @@ else
   PASS=$((PASS + 1))
 fi
 
-# --- 17. a stale/rogue secret still sitting in SSM under /beebase/prod
-#     is ignored outright: the production .env's value always wins, and
-#     the rogue SSM value is never written anywhere or logged ---
+# --- 18. deploy.env (the one file Compose interpolation reads) never
+#     contains JWT_PRIVATE_KEY, TOTP_ENCRYPTION_KEY or STORAGE_BUCKET -
+#     those are only ever injected straight into their owning
+#     container via env_file:, never mirrored into the shared
+#     interpolation file. It DOES need a same-deploy copy of each
+#     POSTGRES_*_PASSWORD (see docker-compose.prod.yml's header comment
+#     for why), so this is checked by key name, not by absence of the
+#     value alone. ---
+
+if grep -q "^JWT_PRIVATE_KEY=" "${DEPLOY_ROOT}/config/deploy.env" ||
+   grep -q "^TOTP_ENCRYPTION_KEY=" "${DEPLOY_ROOT}/config/deploy.env" ||
+   grep -q "^STORAGE_BUCKET=" "${DEPLOY_ROOT}/config/deploy.env"
+then
+  echo "FAIL: deploy.env contains a key that should only ever live in its owning service's own .env"
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS: deploy.env never contains JWT_PRIVATE_KEY, TOTP_ENCRYPTION_KEY or STORAGE_BUCKET"
+  PASS=$((PASS + 1))
+fi
+if grep -qxF "POSTGRES_AUTH_PASSWORD=fake-auth-pw" "${DEPLOY_ROOT}/config/deploy.env"; then
+  echo "PASS: deploy.env mirrors auth's POSTGRES_AUTH_PASSWORD for Compose's own interpolation"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: deploy.env mirrors auth's POSTGRES_AUTH_PASSWORD for Compose's own interpolation"
+  FAIL=$((FAIL + 1))
+fi
+
+# --- 19. a stale/rogue secret (and a stale STORAGE_BUCKET, left over
+#     from before the per-service .env migration) still sitting in SSM
+#     under /beebase/prod is ignored outright: only PUBLIC_DOMAIN is
+#     ever accepted from SSM, and no rogue value is ever written
+#     anywhere or logged ---
 
 MOCK_SSM_INCLUDE_SECRETS=1 run_deploy "${VALID_FILE}"
-if [ "${RC}" -eq 0 ] && grep -qxF "JWT_PRIVATE_KEY=fake-jwt-key" "${DEPLOY_ROOT}/config/.env"; then
-  echo "PASS: production .env's JWT_PRIVATE_KEY wins over a same-named SSM parameter"
+if [ "${RC}" -eq 0 ] && grep -qxF "JWT_PRIVATE_KEY=fake-jwt-key" "${DEPLOY_ROOT}/config/auth.env"; then
+  echo "PASS: auth.env's JWT_PRIVATE_KEY wins over a same-named SSM parameter (auth.env is simply never touched)"
   PASS=$((PASS + 1))
 else
-  echo "FAIL: production .env's JWT_PRIVATE_KEY wins over a same-named SSM parameter (rc=${RC})"
-  cat "${DEPLOY_ROOT}/config/.env" 2>/dev/null
+  echo "FAIL: auth.env's JWT_PRIVATE_KEY wins over a same-named SSM parameter (rc=${RC})"
   FAIL=$((FAIL + 1))
 fi
-if grep -qF "rogue-ssm" "${DEPLOY_ROOT}/config/.env" 2>/dev/null || echo "${OUT}" | grep -qF "rogue-ssm"; then
-  echo "FAIL: a stale SSM secret value leaked into the deployed .env or the deploy log"
+if grep -rqF "rogue-ssm" "${DEPLOY_ROOT}/config/" 2>/dev/null || echo "${OUT}" | grep -qF "rogue-ssm"; then
+  echo "FAIL: a stale SSM secret value leaked into deployed config or the deploy log"
   FAIL=$((FAIL + 1))
 else
-  echo "PASS: a stale SSM secret value never reaches the deployed .env or the deploy log"
+  echo "PASS: a stale SSM secret value never reaches deployed config or the deploy log"
   PASS=$((PASS + 1))
 fi
-if echo "${OUT}" | grep -q "ignoring SSM parameter JWT_PRIVATE_KEY"; then
-  echo "PASS: deploy.sh logs (by name only) that it ignored the stale SSM secret"
+if grep -qF "rogue-ssm-bucket" "${DEPLOY_ROOT}/config/deploy.env" 2>/dev/null; then
+  echo "FAIL: a stale SSM STORAGE_BUCKET leaked into deploy.env"
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS: a stale SSM STORAGE_BUCKET never reaches deploy.env (STORAGE_BUCKET is media-owned now, not SSM-sourced)"
+  PASS=$((PASS + 1))
+fi
+if echo "${OUT}" | grep -q "ignoring SSM parameter JWT_PRIVATE_KEY" && echo "${OUT}" | grep -q "ignoring SSM parameter STORAGE_BUCKET"; then
+  echo "PASS: deploy.sh logs (by name only) that it ignored every non-PUBLIC_DOMAIN SSM parameter"
   PASS=$((PASS + 1))
 else
-  echo "FAIL: deploy.sh logs (by name only) that it ignored the stale SSM secret"
+  echo "FAIL: deploy.sh logs (by name only) that it ignored every non-PUBLIC_DOMAIN SSM parameter"
   echo "${OUT}"
   FAIL=$((FAIL + 1))
 fi
+
+# --- 20. rollback: redeploying the SAME release manifest a second time
+#     restores that release's own snapshotted configuration, discarding
+#     any operator edit made to the live files in between - this is
+#     what keeps an image tag and its configuration from ever coming
+#     apart across a rollback (see deploy.sh's restore step). ---
+
+ROLLBACK_ROOT="$(mktemp -d)"
+mkdir -p "${ROLLBACK_ROOT}/config" "${ROLLBACK_ROOT}/releases"
+seed_complete_service_config "${ROLLBACK_ROOT}/config"
+
+REUSE_ROOT="${ROLLBACK_ROOT}" PRESEED_MODE=reuse run_deploy "${VALID_FILE}"
+FIRST_RC="${RC}"
+
+SNAPSHOT_DIR="${ROLLBACK_ROOT}/releases/2026.09.07-1/config-snapshot"
+if [ "${FIRST_RC}" -eq 0 ] && [ -f "${SNAPSHOT_DIR}/auth.env" ] && grep -qxF "JWT_PRIVATE_KEY=fake-jwt-key" "${SNAPSHOT_DIR}/auth.env"; then
+  echo "PASS: a successful deploy snapshots this release's own configuration"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: a successful deploy snapshots this release's own configuration (rc=${FIRST_RC})"
+  FAIL=$((FAIL + 1))
+fi
+
+# Simulate an operator changing the live auth.env in between deploys -
+# e.g. rotating a key ahead of the NEXT release, before this release is
+# ever rolled back to.
+sed -i.bak 's/^JWT_PRIVATE_KEY=.*/JWT_PRIVATE_KEY=tampered-after-first-deploy/' "${ROLLBACK_ROOT}/config/auth.env"
+
+REUSE_ROOT="${ROLLBACK_ROOT}" PRESEED_MODE=reuse run_deploy "${VALID_FILE}"
+SECOND_RC="${RC}"
+
+if [ "${SECOND_RC}" -eq 0 ] && echo "${OUT}" | grep -q "restoring its exact per-service configuration"; then
+  echo "PASS: redeploying the same release logs that it is restoring that release's own configuration"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: redeploying the same release logs that it is restoring that release's own configuration (rc=${SECOND_RC})"
+  echo "${OUT}"
+  FAIL=$((FAIL + 1))
+fi
+if grep -qxF "JWT_PRIVATE_KEY=fake-jwt-key" "${ROLLBACK_ROOT}/config/auth.env"; then
+  echo "PASS: rollback/redeploy restores the release's original JWT_PRIVATE_KEY, discarding the operator's later edit"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: rollback/redeploy restores the release's original JWT_PRIVATE_KEY, discarding the operator's later edit"
+  cat "${ROLLBACK_ROOT}/config/auth.env"
+  FAIL=$((FAIL + 1))
+fi
+if echo "${OUT}" | grep -qF "tampered-after-first-deploy"; then
+  echo "FAIL: the tampered/rotated secret value was echoed into deploy.sh's own output"
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS: the tampered/rotated secret value is never echoed into deploy.sh's own output"
+  PASS=$((PASS + 1))
+fi
+rm -rf "${ROLLBACK_ROOT}"
+
+# --- 21. a release id whose config snapshot exists but is missing one
+#     service's file fails the deploy outright rather than silently
+#     deploying a partial/inconsistent configuration - this is the
+#     "image and config can never become mismatched" guarantee's other
+#     half: a corrupt snapshot must never be treated as good enough. ---
+
+PARTIAL_SNAPSHOT_ROOT="$(mktemp -d)"
+mkdir -p "${PARTIAL_SNAPSHOT_ROOT}/config" "${PARTIAL_SNAPSHOT_ROOT}/releases"
+seed_complete_service_config "${PARTIAL_SNAPSHOT_ROOT}/config"
+
+REUSE_ROOT="${PARTIAL_SNAPSHOT_ROOT}" PRESEED_MODE=reuse run_deploy "${VALID_FILE}"
+[ "${RC}" -eq 0 ] || echo "(setup deploy for test 21 failed unexpectedly: ${OUT})"
+
+rm -f "${PARTIAL_SNAPSHOT_ROOT}/releases/2026.09.07-1/config-snapshot/hive.env"
+
+REUSE_ROOT="${PARTIAL_SNAPSHOT_ROOT}" PRESEED_MODE=reuse run_deploy "${VALID_FILE}"
+if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -qi "partial rollback snapshot"; then
+  echo "PASS: a corrupted/partial config snapshot fails the deploy rather than proceeding with mismatched config"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: a corrupted/partial config snapshot fails the deploy rather than proceeding with mismatched config (rc=${RC})"
+  echo "${OUT}"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "${PARTIAL_SNAPSHOT_ROOT}"
+
+# --- 22. deploy.env is deliberately NOT snapshotted (it's a derived,
+#     deploy-owned, non-secret cache regenerated every deploy - see
+#     docker-compose.prod.yml's header comment) - only the 7 service
+#     .env files are ---
+
+run_deploy "${VALID_FILE}"
+SNAPSHOT_DIR="${DEPLOY_ROOT}/releases/2026.09.07-1/config-snapshot"
+if [ -d "${SNAPSHOT_DIR}" ] && [ ! -e "${SNAPSHOT_DIR}/deploy.env" ]; then
+  echo "PASS: the config snapshot holds only the 7 service .env files, never deploy.env"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: the config snapshot holds only the 7 service .env files, never deploy.env"
+  ls -la "${SNAPSHOT_DIR}" 2>/dev/null
+  FAIL=$((FAIL + 1))
+fi
+
+# --- 23. the old, single, shared /opt/beebase/config/.env is never
+#     read, written to, or required by deploy.sh - even when it exists
+#     and looks complete, it must never become the active source of
+#     configuration. Its mere presence must not let a deploy skip
+#     provisioning the 7 new per-service files. ---
+
+LEGACY_ONLY_ROOT="$(mktemp -d)"
+mkdir -p "${LEGACY_ONLY_ROOT}/config" "${LEGACY_ONLY_ROOT}/releases"
+cat >"${LEGACY_ONLY_ROOT}/config/.env" <<'EOF'
+POSTGRES_AUTH_PASSWORD=legacy-auth-pw
+POSTGRES_APIARY_PASSWORD=legacy-apiary-pw
+POSTGRES_HIVE_PASSWORD=legacy-hive-pw
+POSTGRES_INSPECTION_PASSWORD=legacy-inspection-pw
+POSTGRES_MEDIA_PASSWORD=legacy-media-pw
+TOTP_ENCRYPTION_KEY=legacy-totp-key
+JWT_PRIVATE_KEY=legacy-jwt-key
+EOF
+chmod 600 "${LEGACY_ONLY_ROOT}/config/.env"
+
+REUSE_ROOT="${LEGACY_ONLY_ROOT}" PRESEED_MODE=reuse run_deploy "${VALID_FILE}"
+if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -q "does not exist"; then
+  echo "PASS: a legacy single .env alone (no per-service files) still fails the deploy"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: a legacy single .env alone (no per-service files) still fails the deploy (rc=${RC})"
+  echo "${OUT}"
+  FAIL=$((FAIL + 1))
+fi
+
+seed_complete_service_config "${LEGACY_ONLY_ROOT}/config"
+REUSE_ROOT="${LEGACY_ONLY_ROOT}" PRESEED_MODE=reuse run_deploy "${VALID_FILE}"
+if [ "${RC}" -eq 0 ] &&
+  grep -qxF "JWT_PRIVATE_KEY=legacy-jwt-key" "${LEGACY_ONLY_ROOT}/config/.env" &&
+  ! grep -qF "legacy-" "${LEGACY_ONLY_ROOT}/config/deploy.env" 2>/dev/null &&
+  ! echo "${OUT}" | grep -qF "legacy-"
+then
+  echo "PASS: the legacy .env is left untouched and never becomes part of the active deploy once the 7 files exist"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: the legacy .env is left untouched and never becomes part of the active deploy once the 7 files exist (rc=${RC})"
+  cat "${LEGACY_ONLY_ROOT}/config/.env"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "${LEGACY_ONLY_ROOT}"
 
 echo
 echo "deploy.sh integration tests: ${PASS} passed, ${FAIL} failed"

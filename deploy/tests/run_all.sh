@@ -6,7 +6,7 @@ set -uo pipefail
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 overall_rc=0
-for suite in test_manifest.sh test_secrets.sh test_compose_config.sh test_deploy_integration.sh test_service_workflows.sh test_production_release_workflow.sh; do
+for suite in test_manifest.sh test_env_config.sh test_compose_config.sh test_deploy_integration.sh test_service_workflows.sh test_production_release_workflow.sh; do
   echo "=== ${suite} ==="
   bash "${TESTS_DIR}/${suite}"
   rc=$?

@@ -20,17 +20,40 @@
 #     own identifier (e.g. 2026.09.07-1), used only for log-stream
 #     naming on services that have no image tag of their own (edge,
 #     postgres, redis) - it never substitutes for an image tag.
-#   - Secrets (JWT_PRIVATE_KEY, TOTP_ENCRYPTION_KEY, POSTGRES_*_PASSWORD)
-#     come exclusively from the production .env file at
-#     /opt/beebase/config/.env - provisioned once by an operator (see
-#     deploy/.env.example) and never touched by deploy.sh afterwards.
-#     They are never stored in this repo, a release manifest, a Docker
-#     image, or AWS SSM Parameter Store - see deploy/lib/secrets.sh.
-#     Non-secret production config (PUBLIC_DOMAIN, STORAGE_BUCKET, ...)
-#     is still refreshed into the same .env from SSM on every deploy, as
-#     before - see deploy.sh. Media storage needs no static secret at
-#     all: media-service authenticates to S3 via the EC2 instance's IAM
-#     role.
+#
+#   - Each of the 7 application services owns its own production .env at
+#     ${BEEBASE_CONFIG_DIR:-../config}/<service>.env (gateway.env,
+#     auth.env, apiary.env, hive.env, inspection.env, media.env,
+#     statistics.env - see deploy/lib/env_config.sh for the exact
+#     mapping and required-key lists, and deploy/env-templates/ for the
+#     per-service templates an operator provisions them from). Every
+#     application service below loads its own file, and only its own
+#     file, via `env_file:` - a service never sees another service's
+#     secrets. These files are provisioned once by an operator and never
+#     rewritten by deploy.sh; they are never stored in this repo, a
+#     release manifest, a Docker image, or AWS SSM Parameter Store - see
+#     deploy/lib/env_config.sh and deploy.sh's validation step, which
+#     refuses to touch the running stack unless every one of the 7 files
+#     exists, is mode 0600, and has every required key set.
+#
+#   - One narrow exception: Compose's own ${VAR} interpolation (used
+#     below by every postgres-* container's POSTGRES_PASSWORD and every
+#     migrate-* job's `-database=...` command argument) can only ever
+#     read from the single file passed via `docker compose --env-file`
+#     - it has no way to reach into another service's `env_file:`
+#     contents, which are injected straight into that one container's
+#     runtime environment and nowhere else. deploy.sh resolves this by
+#     regenerating ${BEEBASE_CONFIG_DIR:-../config}/deploy.env fresh on
+#     every deploy: non-secret deploy-computed values (ECR_REGISTRY,
+#     AWS_REGION, RELEASE, every *_IMAGE_TAG, PUBLIC_DOMAIN,
+#     BEEBASE_CONFIG_DIR itself) plus a same-deploy copy of each
+#     POSTGRES_*_PASSWORD, read from that service's own .env (never
+#     logged). deploy.env is passed to `docker compose --env-file` and
+#     is what every ${VAR} below resolves against; it is regenerated
+#     from the 7 authoritative per-service files on every deploy and is
+#     never operator-edited, so it is a derived cache, not a second
+#     source of truth. Media storage needs no static secret at all:
+#     media-service authenticates to S3 via the EC2 instance's IAM role.
 #
 # Only the `edge` (Caddy) service publishes a host port. Every other
 # container - gateway included - is reachable solely on the internal
@@ -98,6 +121,8 @@ services:
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
+    env_file:
+      - ${BEEBASE_CONFIG_DIR:-../config}/gateway.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info
@@ -140,6 +165,16 @@ services:
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
+    # JWT_PRIVATE_KEY, TOTP_ENCRYPTION_KEY and (optionally) COOKIE_DOMAIN
+    # come from auth.env - auth-service's own production secrets, never
+    # duplicated here (see this file's header comment and
+    # deploy/env-templates/auth.env.example). Leaving COOKIE_DOMAIN unset
+    # in auth.env falls through to the app's own default (empty/host-only,
+    # correct for the current single-domain deployment - see
+    # beebase-auth-service's config.go), so no compose-level default is
+    # needed for it any more either.
+    env_file:
+      - ${BEEBASE_CONFIG_DIR:-../config}/auth.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info
@@ -147,19 +182,8 @@ services:
       GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}@postgres-auth:5432/beebase_auth?sslmode=disable
       REDIS_ADDR: redis:6379
-      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?set JWT_PRIVATE_KEY}
       ACCESS_TOKEN_TTL: 15m
       REFRESH_TOKEN_TTL: 720h
-      # Empty (the app's own default, see auth-service's config.go) is
-      # correct here, not a placeholder needing a value: the refresh
-      # cookie only ever needs to be read back by api.beebase.club
-      # itself - there's no separate first-party subdomain in this
-      # architecture that also needs it, so "host only" is the right
-      # scope, not a shared-parent-domain leading dot. Left as an
-      # optional override (:-, not :?) rather than removed entirely, in
-      # case that ever changes.
-      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
-      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set TOTP_ENCRYPTION_KEY}
       TOTP_ISSUER: BeeBase
       MEDIA_SERVICE_URL: http://media-service:8080
       APIARY_SERVICE_URL: http://apiary-service:8080
@@ -188,6 +212,8 @@ services:
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
+    env_file:
+      - ${BEEBASE_CONFIG_DIR:-../config}/apiary.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info
@@ -225,6 +251,8 @@ services:
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
+    env_file:
+      - ${BEEBASE_CONFIG_DIR:-../config}/hive.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info
@@ -264,6 +292,8 @@ services:
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
+    env_file:
+      - ${BEEBASE_CONFIG_DIR:-../config}/inspection.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info
@@ -303,6 +333,11 @@ services:
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
+    # STORAGE_BUCKET comes from media.env - media-service owns its own
+    # storage configuration (see this file's header comment and
+    # deploy/env-templates/media.env.example), never duplicated here.
+    env_file:
+      - ${BEEBASE_CONFIG_DIR:-../config}/media.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info
@@ -317,7 +352,6 @@ services:
       # instance's IAM role (see terraform/modules/iam), resolved
       # automatically by the AWS SDK's default credential chain - no
       # static key ever exists on this host or in this image.
-      STORAGE_BUCKET: ${STORAGE_BUCKET:?set STORAGE_BUCKET}
       STORAGE_REGION: ${AWS_REGION:?set AWS_REGION}
     networks: [beebase]
     depends_on:
@@ -345,6 +379,8 @@ services:
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
+    env_file:
+      - ${BEEBASE_CONFIG_DIR:-../config}/statistics.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info

@@ -62,11 +62,70 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Configure AWS credentials (OIDC - no long-lived keys)
-        if: inputs.rollback_release == ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+
+      # Fails the whole run fast, before any image/manifest work, if any
+      # of the 7 services' production .env files (auth.env, gateway.env,
+      # ...) is missing, wrong-permissioned or incomplete on the host -
+      # deploy.sh re-validates this itself regardless (see deploy.sh and
+      # deploy/lib/env_config.sh, the single source of truth for what
+      # "valid" means here - never reimplemented in this workflow), but
+      # catching it here means a misconfigured host is reported in ~10
+      # seconds of CI output instead of after minutes of image pulls and
+      # migrations against a stack this run then has to abandon.
+      - name: Validate every service's production .env exists on the host
+        env:
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${EC2_INSTANCE_ID}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Validate BeeBase per-service production .env files" \
+            --parameters '{"commands":["source /opt/beebase/deploy/lib/env_config.sh && env_config::validate_all \"${BEEBASE_CONFIG_DIR:-/opt/beebase/config}\""]}' \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "SSM command: ${COMMAND_ID}"
+
+          STATUS="Pending"
+
+          for i in $(seq 1 30); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "${COMMAND_ID}" \
+              --instance-id "${EC2_INSTANCE_ID}" \
+              --query "Status" \
+              --output text 2>/dev/null || echo "Pending")
+
+            case "${STATUS}" in
+              Success)
+                break
+                ;;
+              Failed|Cancelled|TimedOut)
+                echo "::error::One or more service .env files failed validation on the production host - see the standard error below (key names only, never values)"
+                aws ssm get-command-invocation \
+                  --command-id "${COMMAND_ID}" \
+                  --instance-id "${EC2_INSTANCE_ID}" \
+                  --query "StandardErrorContent" \
+                  --output text >&2
+                exit 1
+                ;;
+              *)
+                sleep 2
+                ;;
+            esac
+          done
+
+          if [ "${STATUS}" != "Success" ]; then
+            echo "::error::Timed out while validating per-service production .env files"
+            exit 1
+          fi
+
+          echo "all 7 service .env files present, mode 0600, and complete"
 
       - name: Resolve current production manifest
         if: inputs.rollback_release == ''

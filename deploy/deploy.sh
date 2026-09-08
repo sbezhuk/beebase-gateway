@@ -24,15 +24,31 @@
 # deployment script, manifest library, Caddyfile and docker-compose.prod.yml.
 # The bundle is installed during EC2 bootstrap from an immutable S3 object.
 #
-# Secrets are never stored in the deployment bundle, release manifest, or
-# AWS SSM Parameter Store - see deploy/lib/secrets.sh for the exact list
-# (POSTGRES_*_PASSWORD, TOTP_ENCRYPTION_KEY, JWT_PRIVATE_KEY). Their only
-# source is the production .env at /opt/beebase/config/.env, provisioned
-# once by an operator (see deploy/.env.example) and preserved by this
-# script across every deploy. Non-secret production config
-# (PUBLIC_DOMAIN, STORAGE_BUCKET, ...) still comes from AWS SSM Parameter
-# Store on every deployment, exactly as before, and is merged into the
-# same .env file alongside the untouched secrets.
+# Configuration: each of the 7 application services owns its own
+# production .env at ${BEEBASE_CONFIG_DIR:-/opt/beebase/config}/<service>.env
+# (see deploy/lib/env_config.sh for the exact file names and required
+# keys, and deploy/env-templates/ for the per-service templates an
+# operator provisions them from). This script never writes to any of
+# those 7 files - it only validates them, every time, before it will
+# touch the running stack (see "Validate every service's own .env"
+# below) - and never prints a value from any of them, only key names.
+#
+# The single exception is ${CONFIG_DIR}/deploy.env, which this script
+# fully regenerates on every deploy: non-secret deploy-computed values
+# (ECR_REGISTRY, AWS_REGION, RELEASE, every *_IMAGE_TAG, PUBLIC_DOMAIN,
+# BEEBASE_CONFIG_DIR) plus a same-deploy copy of each
+# POSTGRES_*_PASSWORD read from that service's own .env. deploy.env
+# exists only because Docker Compose's own ${VAR} interpolation (used by
+# every postgres-* container and migrate-* job) can only ever read from
+# the single file passed via `docker compose --env-file` - see
+# docker-compose.prod.yml's header comment. It is a derived cache
+# regenerated from the 7 authoritative files every time, never operator
+# -edited, and never a second source of truth.
+#
+# The old, single, shared /opt/beebase/config/.env this replaced is
+# never read, written, or deleted by this script. Nothing here migrates
+# it or treats it as a fallback - see the deployment report's remaining
+# migration step for retiring it once the new flow is proven.
 #
 # Usage: deploy.sh <release-manifest.env>
 #   e.g. deploy.sh /opt/beebase/releases/2026.09.07-1.env
@@ -43,19 +59,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=lib/manifest.sh
 source "${SCRIPT_DIR}/lib/manifest.sh"
-# shellcheck source=lib/secrets.sh
-source "${SCRIPT_DIR}/lib/secrets.sh"
+# shellcheck source=lib/env_config.sh
+source "${SCRIPT_DIR}/lib/env_config.sh"
 
 COMPOSE_DIR="${BEEBASE_COMPOSE_DIR:-/opt/beebase/compose}"
 CONFIG_DIR="${BEEBASE_CONFIG_DIR:-/opt/beebase/config}"
 RELEASES_DIR="${BEEBASE_RELEASES_DIR:-/opt/beebase/releases}"
 
-ENV_FILE="${CONFIG_DIR}/.env"
+DEPLOY_ENV_FILE="${CONFIG_DIR}/deploy.env"
 CADDYFILE_SOURCE="${SCRIPT_DIR}/Caddyfile"
 CADDYFILE_TARGET="${CONFIG_DIR}/Caddyfile"
 
 CURRENT_LINK="${RELEASES_DIR}/current"
-COMPOSE="docker compose -f ${COMPOSE_DIR}/docker-compose.prod.yml --env-file ${ENV_FILE}"
+COMPOSE="docker compose -f ${COMPOSE_DIR}/docker-compose.prod.yml --env-file ${DEPLOY_ENV_FILE}"
 SSM_PATH="/beebase/prod"
 
 log() {
@@ -92,6 +108,55 @@ for key in "${MANIFEST_SERVICE_TAG_KEYS[@]}"; do
   log "  ${key}=$(manifest::get "${key}")"
 done
 
+# --- Rollback safety: if this exact release was deployed successfully
+#     before, restore the exact per-service .env files it was deployed
+#     with, before anything else happens. This is what keeps an image
+#     tag and its configuration from ever coming apart across a
+#     rollback: re-running deploy.sh against an older manifest (the
+#     documented way to roll back - see the README) always redeploys
+#     that release's images together with that release's own
+#     configuration, not whatever an operator may have edited into the
+#     live files since. A first-time deploy of a brand-new release has
+#     no snapshot yet, so this is a no-op and the currently live,
+#     operator-provisioned files are what gets validated and deployed
+#     below - and, on success, snapshotted for any future rollback to
+#     this release. ---
+
+CONFIG_SNAPSHOT_DIR="${RELEASES_DIR}/${RELEASE}/config-snapshot"
+
+if [ -d "${CONFIG_SNAPSHOT_DIR}" ]; then
+  log "release ${RELEASE} was deployed before - restoring its exact per-service configuration from ${CONFIG_SNAPSHOT_DIR} (values never logged)"
+
+  mkdir -p "${CONFIG_DIR}"
+
+  for service in "${ENV_SERVICES[@]}"; do
+    snapshot_file="${CONFIG_SNAPSHOT_DIR}/${ENV_FILE_NAME[${service}]}"
+    live_file="$(env_config::file_path "${CONFIG_DIR}" "${service}")"
+
+    [ -f "${snapshot_file}" ] \
+      || fail "config snapshot for release ${RELEASE} is missing ${ENV_FILE_NAME[${service}]} - refusing to deploy with a partial rollback snapshot"
+
+    cp "${snapshot_file}" "${live_file}"
+    chmod 600 "${live_file}"
+  done
+
+  log "restored configuration for all 7 services from release ${RELEASE}'s snapshot"
+fi
+
+# --- 6. Validate every service's own production .env exists, is mode
+#     0600, and has every required key set - BEFORE anything about the
+#     running application stack changes. Every failure is reported (not
+#     just the first) so an operator sees the complete picture in one
+#     pass. Never prints a value, only key names - see
+#     deploy/lib/env_config.sh. ---
+
+log "validating each of the 7 services' production .env files in ${CONFIG_DIR}"
+
+env_config::validate_all "${CONFIG_DIR}" \
+  || fail "one or more service .env files in ${CONFIG_DIR} failed validation (see above) - provision/fix them before deploying; deploy.sh never creates or completes these files itself"
+
+log "all 7 service .env files present, mode 0600, and complete"
+
 # --- Derive account/region-specific values from the instance itself ---
 #
 # IMDSv2 is required (metadata_options in Terraform enforces this).
@@ -108,54 +173,57 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-# --- 6. Load production secrets from the existing .env, then refresh
-#     everything else (image tags, region/registry, and the non-secret
-#     SSM parameters) around them ---
-#
-# The seven secrets in SECRET_KEYS (deploy/lib/secrets.sh) are never
-# retrieved from SSM, generated, or defaulted here - ${ENV_FILE} is their
-# single source of truth, provisioned once by an operator (see
-# deploy/.env.example) and left byte-for-byte untouched by every deploy
-# after that. Everything else in ${ENV_FILE} - ECR_REGISTRY, AWS_REGION,
-# RELEASE, each service's image tag, and non-secret config such as
-# PUBLIC_DOMAIN/STORAGE_BUCKET - is regenerated fresh on every deploy, as
-# before. The manifest itself never contains secrets either - only image
-# tags and the release id/timestamp.
+# --- Regenerate ${CONFIG_DIR}/deploy.env, the one file Compose's own
+#     ${VAR} interpolation reads (see this script's and
+#     docker-compose.prod.yml's header comments for why this file has to
+#     exist at all). Fully regenerated every deploy, atomically swapped
+#     into place only once complete - the 7 service .env files
+#     themselves are never written to by this script. ---
 
 mkdir -p "${CONFIG_DIR}"
 
-[ -f "${ENV_FILE}" ] \
-  || fail "production .env not found at ${ENV_FILE} - provision it first with the required secrets (see deploy/.env.example); deploy.sh no longer creates it from SSM"
-
-secrets::validate "${ENV_FILE}" \
-  || fail "${ENV_FILE} is missing required production secrets (see above) - add them to ${ENV_FILE} before deploying; deploy.sh no longer sources secrets from SSM"
-
-log "loaded production secrets from ${ENV_FILE} (values are never logged)"
-
 umask 077
 
-# Keys this deploy regenerates below - every other line already in
-# ${ENV_FILE} (the seven secrets, plus anything else an operator has
-# added there) is carried over untouched.
-GENERATED_KEYS=(ECR_REGISTRY AWS_REGION RELEASE "${MANIFEST_SERVICE_TAG_KEYS[@]}")
-GENERATED_KEY_PATTERN="$(IFS='|'; echo "${GENERATED_KEYS[*]}")"
-
-TMP_ENV_FILE="$(mktemp "${CONFIG_DIR}/.env.XXXXXX")"
+TMP_DEPLOY_ENV_FILE="$(mktemp "${CONFIG_DIR}/.deploy.env.XXXXXX")"
 
 {
   echo "ECR_REGISTRY=${ECR_REGISTRY}"
   echo "AWS_REGION=${AWS_REGION}"
   echo "RELEASE=${RELEASE}"
+  echo "BEEBASE_CONFIG_DIR=${CONFIG_DIR}"
 
   for key in "${MANIFEST_SERVICE_TAG_KEYS[@]}"; do
     echo "${key}=$(manifest::get "${key}")"
   done
-} >"${TMP_ENV_FILE}"
 
-log "fetching non-secret parameters from SSM Parameter Store (${SSM_PATH})"
+  # Copy each service's own POSTGRES_PASSWORD into deploy.env under the
+  # per-service interpolation key name docker-compose.prod.yml expects
+  # (POSTGRES_AUTH_PASSWORD, POSTGRES_APIARY_PASSWORD, ...) - see
+  # deploy/lib/env_config.sh's ENV_DB_INTERPOLATION_KEY comment. Read
+  # straight from the authoritative per-service file; never echoed
+  # anywhere else, including this script's own log output.
+  for service in "${!ENV_DB_INTERPOLATION_KEY[@]}"; do
+    service_file="$(env_config::file_path "${CONFIG_DIR}" "${service}")"
+    password="$(env_config::read_value "${service_file}" "POSTGRES_PASSWORD")"
+    echo "${ENV_DB_INTERPOLATION_KEY[${service}]}=${password}"
+  done
+} >"${TMP_DEPLOY_ENV_FILE}"
+
+log "fetching non-secret global parameters from SSM Parameter Store (${SSM_PATH})"
+
+# Only PUBLIC_DOMAIN is fetched from SSM: it's the one deploy-owned,
+# genuinely global, non-secret value with no single service owner (every
+# service's own configuration - including what used to be sourced from
+# SSM, like media-service's STORAGE_BUCKET - now lives in that service's
+# own .env; see requirement 10 in the deployment report). SSM remains
+# available only as this narrow, non-secret, migration-era mechanism -
+# it is never the source of truth for any production secret. Anything
+# else found under ${SSM_PATH} (including a stale secret parameter left
+# over from before this migration) is ignored outright and logged by
+# name only, never written anywhere or echoed.
 
 NEXT_TOKEN=""
-SSM_PARAM_COUNT=0
+PUBLIC_DOMAIN_FOUND=0
 
 while : ; do
   if [ -z "${NEXT_TOKEN}" ]; then
@@ -179,22 +247,17 @@ while : ; do
          | "\($key)=\(.Value)"'
   )
 
-  # Defense in depth: the seven secrets must never come from SSM, even if
-  # a stale parameter is still sitting under ${SSM_PATH} - skip it rather
-  # than let it silently override (or get logged from) the production
-  # .env. Only the key name is ever logged, never the value.
   while IFS= read -r line; do
     [ -n "${line}" ] || continue
 
     key="${line%%=*}"
 
-    if secrets::is_secret_key "${key}"; then
-      log "ignoring SSM parameter ${key} - production secrets come from ${ENV_FILE} only"
-      continue
+    if [ "${key}" = "PUBLIC_DOMAIN" ]; then
+      echo "${line}" >>"${TMP_DEPLOY_ENV_FILE}"
+      PUBLIC_DOMAIN_FOUND=1
+    else
+      log "ignoring SSM parameter ${key} - only PUBLIC_DOMAIN is sourced from SSM; every service's own configuration comes from its own .env only"
     fi
-
-    echo "${line}" >>"${TMP_ENV_FILE}"
-    SSM_PARAM_COUNT=$((SSM_PARAM_COUNT + 1))
   done <<<"${ALL_LINES}"
 
   NEXT_TOKEN=$(echo "${PAGE}" | jq -r '.NextToken // empty')
@@ -202,25 +265,15 @@ while : ; do
   [ -n "${NEXT_TOKEN}" ] || break
 done
 
-[ "${SSM_PARAM_COUNT}" -gt 0 ] \
-  || fail "expected non-secret production parameters under ${SSM_PATH} (e.g. PUBLIC_DOMAIN, STORAGE_BUCKET), found none - check SSM Parameter Store setup"
+[ "${PUBLIC_DOMAIN_FOUND}" -eq 1 ] \
+  || fail "expected PUBLIC_DOMAIN under ${SSM_PATH} in SSM Parameter Store, found none - check SSM Parameter Store setup"
 
-# Carry over every line already in the production .env whose key isn't
-# one deploy.sh just regenerated above - this is what preserves the
-# seven secrets (and anything else an operator has added) across every
-# deploy without this script ever reading their values into its own
-# control flow.
-grep -vE "^(${GENERATED_KEY_PATTERN})=" "${ENV_FILE}" >>"${TMP_ENV_FILE}" || true
+mv "${TMP_DEPLOY_ENV_FILE}" "${DEPLOY_ENV_FILE}"
+chmod 600 "${DEPLOY_ENV_FILE}"
 
-mv "${TMP_ENV_FILE}" "${ENV_FILE}"
-chmod 600 "${ENV_FILE}"
+DEPLOY_ENV_PARAM_COUNT=$(grep -c '=' "${DEPLOY_ENV_FILE}" || true)
 
-secrets::validate "${ENV_FILE}" \
-  || fail "${ENV_FILE} lost required production secrets while regenerating non-secret config - this should never happen, aborting"
-
-PARAM_COUNT=$(grep -c '=' "${ENV_FILE}" || true)
-
-log "wrote ${PARAM_COUNT} parameters to ${ENV_FILE} (0600), including ${#SECRET_KEYS[@]} production secrets carried over unchanged"
+log "wrote ${DEPLOY_ENV_PARAM_COUNT} parameters to ${DEPLOY_ENV_FILE} (0600, deploy-generated, values never logged)"
 
 # --- Ensure the Caddyfile is a regular file ---
 #
@@ -367,7 +420,8 @@ done
 # --- 14. Start/recreate the production stack ---
 #
 # Every application container is recreated against this one release
-# manifest's exact image tags.
+# manifest's exact image tags, and each one loads its own service .env
+# via `env_file:` (see docker-compose.prod.yml).
 
 log "starting/recreating the full stack"
 
@@ -472,6 +526,32 @@ echo "${JWKS}" |
   jq -e '.keys | length > 0' \
   >/dev/null \
   || fail "smoke test failed: jwks.json via gateway did not return a signing key"
+
+# --- Snapshot this release's exact configuration for future rollbacks ---
+#
+# Reached only after every health check and smoke test passed, so a
+# snapshot only ever exists for configuration that's actually known to
+# work together with this release's images. A future rollback to this
+# exact release restores this exact snapshot (see the restore step near
+# the top of this script), keeping an image tag and its configuration
+# from ever coming apart. deploy.env is deliberately NOT snapshotted -
+# it is derived, deploy-owned and non-secret, and is regenerated fresh
+# from the snapshotted per-service files on every future deploy anyway.
+
+log "snapshotting this release's per-service configuration for future rollbacks"
+
+mkdir -p "${CONFIG_SNAPSHOT_DIR}"
+chmod 700 "${CONFIG_SNAPSHOT_DIR}"
+
+for service in "${ENV_SERVICES[@]}"; do
+  live_file="$(env_config::file_path "${CONFIG_DIR}" "${service}")"
+  snapshot_file="${CONFIG_SNAPSHOT_DIR}/${ENV_FILE_NAME[${service}]}"
+
+  cp "${live_file}" "${snapshot_file}"
+  chmod 600 "${snapshot_file}"
+done
+
+log "configuration snapshot for release ${RELEASE} written to ${CONFIG_SNAPSHOT_DIR}"
 
 # --- Record this release as the currently deployed one ---
 #
