@@ -19,14 +19,43 @@ fi
 PASS=0
 FAIL=0
 
+# Fake values for the seven secrets deploy.sh must now source exclusively
+# from the production .env - never from SSM. Distinct per key so a test
+# can tell them apart in the resulting .env.
+seed_secrets_env() {
+  local file="$1"
+  cat >"${file}" <<'EOF'
+POSTGRES_AUTH_PASSWORD=fake-auth-pw
+POSTGRES_APIARY_PASSWORD=fake-apiary-pw
+POSTGRES_HIVE_PASSWORD=fake-hive-pw
+POSTGRES_INSPECTION_PASSWORD=fake-inspection-pw
+POSTGRES_MEDIA_PASSWORD=fake-media-pw
+TOTP_ENCRYPTION_KEY=fake-totp-key
+JWT_PRIVATE_KEY=fake-jwt-key
+EOF
+  chmod 600 "${file}"
+}
+
 # run_deploy <manifest-file> - invokes deploy.sh with a fresh, isolated
 # /opt/beebase-style layout under a temp dir and mocked aws/docker/curl
 # on PATH. Sets OUT, RC and DOCKER_LOG for the caller to inspect.
+#
+# By default, seeds config/.env with a complete set of the seven
+# production secrets first, since deploy.sh now requires that file to
+# already exist - set PRESEED_ENV_FILE=none to simulate a host where it
+# hasn't been provisioned yet, or PRESEED_ENV_FILE=<path> to seed from a
+# specific file instead (e.g. one missing a key).
 run_deploy() {
   local manifest_file="$1"
   local root
   root="$(mktemp -d)"
   mkdir -p "${root}/config" "${root}/releases"
+
+  case "${PRESEED_ENV_FILE:-default}" in
+    none) : ;;
+    default) seed_secrets_env "${root}/config/.env" ;;
+    *) cp "${PRESEED_ENV_FILE}" "${root}/config/.env" && chmod 600 "${root}/config/.env" ;;
+  esac
 
   DOCKER_LOG="${root}/docker.log"
   : >"${DOCKER_LOG}"
@@ -38,6 +67,7 @@ run_deploy() {
     BEEBASE_RELEASES_DIR="${root}/releases" \
     MOCK_DOCKER_LOG="${DOCKER_LOG}" \
     MOCK_MISSING_IMAGES="${MOCK_MISSING_IMAGES:-}" \
+    MOCK_SSM_INCLUDE_SECRETS="${MOCK_SSM_INCLUDE_SECRETS:-0}" \
     bash "${DEPLOY_SH}" "${manifest_file}" 2>&1
   )
   RC=$?
@@ -238,6 +268,101 @@ if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -qi "edge container is not-found"; 
   PASS=$((PASS + 1))
 else
   echo "FAIL: edge container not found fails the deploy with a clear message (rc=${RC})"
+  echo "${OUT}"
+  FAIL=$((FAIL + 1))
+fi
+
+# --- 13. no production .env at all fails the deploy clearly, and never
+#     tries to paper over it by generating one from SSM ---
+
+PRESEED_ENV_FILE=none run_deploy "${VALID_FILE}"
+if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -qi "production .env not found"; then
+  echo "PASS: missing production .env fails the deploy with a clear message"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: missing production .env fails the deploy with a clear message (rc=${RC})"
+  echo "${OUT}"
+  FAIL=$((FAIL + 1))
+fi
+
+# --- 14. production .env missing one required secret fails the deploy,
+#     names the missing key, and never echoes any secret value (from the
+#     keys that ARE present) while doing so ---
+
+MISSING_SECRET_ENV="${TMP_DIR}/missing-secret.env"
+seed_secrets_env "${MISSING_SECRET_ENV}"
+grep -v '^JWT_PRIVATE_KEY=' "${MISSING_SECRET_ENV}" >"${MISSING_SECRET_ENV}.tmp" && mv "${MISSING_SECRET_ENV}.tmp" "${MISSING_SECRET_ENV}"
+
+PRESEED_ENV_FILE="${MISSING_SECRET_ENV}" run_deploy "${VALID_FILE}"
+if [ "${RC}" -ne 0 ] && echo "${OUT}" | grep -q "JWT_PRIVATE_KEY"; then
+  echo "PASS: production .env missing JWT_PRIVATE_KEY fails the deploy and names it"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: production .env missing JWT_PRIVATE_KEY fails the deploy and names it (rc=${RC})"
+  echo "${OUT}"
+  FAIL=$((FAIL + 1))
+fi
+if echo "${OUT}" | grep -qF "fake-auth-pw"; then
+  echo "FAIL: deploy output leaked a present secret's value while reporting a missing one"
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS: deploy output never leaks a secret value while reporting a missing one"
+  PASS=$((PASS + 1))
+fi
+
+# --- 15. a successful deploy carries the seven secrets over from the
+#     production .env byte-for-byte - never regenerated, never touched ---
+
+run_deploy "${VALID_FILE}"
+if [ "${RC}" -eq 0 ] &&
+  grep -qxF "POSTGRES_AUTH_PASSWORD=fake-auth-pw" "${DEPLOY_ROOT}/config/.env" &&
+  grep -qxF "JWT_PRIVATE_KEY=fake-jwt-key" "${DEPLOY_ROOT}/config/.env" &&
+  grep -qxF "TOTP_ENCRYPTION_KEY=fake-totp-key" "${DEPLOY_ROOT}/config/.env"
+then
+  echo "PASS: production secrets are carried over into the deployed .env unchanged"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: production secrets are carried over into the deployed .env unchanged"
+  cat "${DEPLOY_ROOT}/config/.env"
+  FAIL=$((FAIL + 1))
+fi
+
+# --- 16. deploy.sh's own output never contains a secret's value, on a
+#     fully successful run ---
+
+if echo "${OUT}" | grep -qE "fake-auth-pw|fake-apiary-pw|fake-hive-pw|fake-inspection-pw|fake-media-pw|fake-totp-key|fake-jwt-key"; then
+  echo "FAIL: deploy.sh output contains a secret value"
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS: deploy.sh output never contains a secret value"
+  PASS=$((PASS + 1))
+fi
+
+# --- 17. a stale/rogue secret still sitting in SSM under /beebase/prod
+#     is ignored outright: the production .env's value always wins, and
+#     the rogue SSM value is never written anywhere or logged ---
+
+MOCK_SSM_INCLUDE_SECRETS=1 run_deploy "${VALID_FILE}"
+if [ "${RC}" -eq 0 ] && grep -qxF "JWT_PRIVATE_KEY=fake-jwt-key" "${DEPLOY_ROOT}/config/.env"; then
+  echo "PASS: production .env's JWT_PRIVATE_KEY wins over a same-named SSM parameter"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: production .env's JWT_PRIVATE_KEY wins over a same-named SSM parameter (rc=${RC})"
+  cat "${DEPLOY_ROOT}/config/.env" 2>/dev/null
+  FAIL=$((FAIL + 1))
+fi
+if grep -qF "rogue-ssm" "${DEPLOY_ROOT}/config/.env" 2>/dev/null || echo "${OUT}" | grep -qF "rogue-ssm"; then
+  echo "FAIL: a stale SSM secret value leaked into the deployed .env or the deploy log"
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS: a stale SSM secret value never reaches the deployed .env or the deploy log"
+  PASS=$((PASS + 1))
+fi
+if echo "${OUT}" | grep -q "ignoring SSM parameter JWT_PRIVATE_KEY"; then
+  echo "PASS: deploy.sh logs (by name only) that it ignored the stale SSM secret"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL: deploy.sh logs (by name only) that it ignored the stale SSM secret"
   echo "${OUT}"
   FAIL=$((FAIL + 1))
 fi

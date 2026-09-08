@@ -34,9 +34,15 @@ services:
   auth-postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    # POSTGRES_USER/POSTGRES_PASSWORD come from auth-service's own .env -
+    # not duplicated here. POSTGRES_DB stays an explicit override: this
+    # full-stack compose names the database beebase_auth (matching
+    # auth-migrate and auth-service's DATABASE_URL below), while
+    # auth-service's own .env uses beebase for its standalone setup -
+    # env_file would otherwise silently switch the database name.
+    env_file:
+      - ../beebase-auth-service/.env
     environment:
-      POSTGRES_USER: beebase
-      POSTGRES_PASSWORD: beebase
       POSTGRES_DB: beebase_auth
     ports:
       - "5432:5432"
@@ -50,34 +56,54 @@ services:
 
   auth-migrate:
     image: migrate/migrate:v4.19.0
+    # Credentials come from auth-service's own .env via env_file below -
+    # never hardcoded here. POSTGRES_HOST/POSTGRES_PORT/POSTGRES_DB are
+    # overridden to reach auth-postgres on the compose network under its
+    # full-stack database name; DATABASE_URL itself (env_file's own
+    # templated value, see beebase-auth-service/.env) then resolves using
+    # this container's real, final environment - substitution happens at
+    # container start, using the merged env_file + environment: below.
+    env_file:
+      - ../beebase-auth-service/.env
+    environment:
+      POSTGRES_HOST: auth-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: beebase_auth
     depends_on:
       auth-postgres:
         condition: service_healthy
     volumes:
       - ../beebase-auth-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
     command:
-      - -path=/migrations
-      - -database=postgres://beebase:beebase@auth-postgres:5432/beebase_auth?sslmode=disable
-      - up
+      - 'migrate -path=/migrations -database "$$DATABASE_URL" up'
 
   auth-service:
     build:
       context: ../beebase-auth-service
     restart: unless-stopped
+    # JWT_PRIVATE_KEY and TOTP_ENCRYPTION_KEY come from auth-service's own
+    # .env - not duplicated here - since it's the only service that ever
+    # reads them, whether run standalone or (as here) as part of this
+    # full-stack compose. See beebase-auth-service/.env.example to
+    # provision it (make keygen / openssl rand -base64 32). `environment:`
+    # below still wins over this for any key both define.
+    env_file:
+      - ../beebase-auth-service/.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
-      DATABASE_URL: postgres://beebase:beebase@auth-postgres:5432/beebase_auth?sslmode=disable
+      # DATABASE_URL itself is not set here: it comes from auth-service's
+      # own .env (env_file above), which builds it from POSTGRES_USER/
+      # POSTGRES_PASSWORD/POSTGRES_HOST/POSTGRES_PORT/POSTGRES_DB - only
+      # the host/db need overriding for this network, never the password.
+      POSTGRES_HOST: auth-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: beebase_auth
       REDIS_ADDR: redis:6379
-      # Required: base64 Ed25519 private key. Generate with:
-      #   (cd ../beebase-auth-service && make keygen)
-      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?set JWT_PRIVATE_KEY in .env, see beebase-auth-service's make keygen}
       ACCESS_TOKEN_TTL: 15m
       REFRESH_TOKEN_TTL: 720h
-      # Required: base64 32-byte AES-256 key encrypting TOTP (2FA) secrets
-      # at rest. Generate with: openssl rand -base64 32
-      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set TOTP_ENCRYPTION_KEY in .env, see beebase-auth-service's .env.example}
       TOTP_ISSUER: BeeBase
       # Updating a profile's avatar asks media-service to verify
       # ownership of the referenced media id; deleting an account asks it
@@ -109,10 +135,10 @@ services:
   apiary-postgres:
     image: postgres:16-alpine
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: beebase
-      POSTGRES_PASSWORD: beebase
-      POSTGRES_DB: beebase_apiary
+    # POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB come from
+    # apiary-service's own .env - not duplicated here.
+    env_file:
+      - ../beebase-apiary-service/.env
     ports:
       - "5433:5432"
     volumes:
@@ -125,25 +151,46 @@ services:
 
   apiary-migrate:
     image: migrate/migrate:v4.19.0
+    # Credentials come from apiary-service's own .env via env_file below -
+    # never hardcoded here. Only the host/port need overriding for this
+    # network; DATABASE_URL (env_file's own templated value, see
+    # beebase-apiary-service/.env) resolves using this container's final
+    # merged environment at container start.
+    env_file:
+      - ../beebase-apiary-service/.env
+    environment:
+      POSTGRES_HOST: apiary-postgres
+      POSTGRES_PORT: "5432"
     depends_on:
       apiary-postgres:
         condition: service_healthy
     volumes:
       - ../beebase-apiary-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
     command:
-      - -path=/migrations
-      - -database=postgres://beebase:beebase@apiary-postgres:5432/beebase_apiary?sslmode=disable
-      - up
+      - 'migrate -path=/migrations -database "$$DATABASE_URL" up'
 
   apiary-service:
     build:
       context: ../beebase-apiary-service
     restart: unless-stopped
+    # Baseline config comes from apiary-service's own .env - not
+    # duplicated here. `environment:` below still wins over this for any
+    # key both define (the in-network URLs/hosts it must have here
+    # instead of the localhost ones apiary-service's own .env uses for
+    # standalone dev).
+    env_file:
+      - ../beebase-apiary-service/.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
-      DATABASE_URL: postgres://beebase:beebase@apiary-postgres:5432/beebase_apiary?sslmode=disable
+      # DATABASE_URL itself is not set here: it comes from apiary-service's
+      # own .env (env_file above), which builds it from POSTGRES_USER/
+      # POSTGRES_PASSWORD/POSTGRES_HOST/POSTGRES_PORT/POSTGRES_DB - only
+      # the host needs overriding for this network, never the password.
+      POSTGRES_HOST: apiary-postgres
+      POSTGRES_PORT: "5432"
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
       # Deleting an apiary cascades to its hives and media. hive-service
@@ -180,10 +227,10 @@ services:
   hive-postgres:
     image: postgres:16-alpine
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: beebase
-      POSTGRES_PASSWORD: beebase
-      POSTGRES_DB: beebase_hive
+    # POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB come from hive-service's
+    # own .env - not duplicated here.
+    env_file:
+      - ../beebase-hive-service/.env
     ports:
       - "5434:5432"
     volumes:
@@ -196,25 +243,45 @@ services:
 
   hive-migrate:
     image: migrate/migrate:v4.19.0
+    # Credentials come from hive-service's own .env via env_file below -
+    # never hardcoded here. Only the host/port need overriding for this
+    # network; DATABASE_URL (env_file's own templated value, see
+    # beebase-hive-service/.env) resolves using this container's final
+    # merged environment at container start.
+    env_file:
+      - ../beebase-hive-service/.env
+    environment:
+      POSTGRES_HOST: hive-postgres
+      POSTGRES_PORT: "5432"
     depends_on:
       hive-postgres:
         condition: service_healthy
     volumes:
       - ../beebase-hive-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
     command:
-      - -path=/migrations
-      - -database=postgres://beebase:beebase@hive-postgres:5432/beebase_hive?sslmode=disable
-      - up
+      - 'migrate -path=/migrations -database "$$DATABASE_URL" up'
 
   hive-service:
     build:
       context: ../beebase-hive-service
     restart: unless-stopped
+    # Baseline config comes from hive-service's own .env - not duplicated
+    # here. `environment:` below still wins over this for any key both
+    # define (the in-network URLs/hosts it must have here instead of the
+    # localhost ones hive-service's own .env uses for standalone dev).
+    env_file:
+      - ../beebase-hive-service/.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
-      DATABASE_URL: postgres://beebase:beebase@hive-postgres:5432/beebase_hive?sslmode=disable
+      # DATABASE_URL itself is not set here: it comes from hive-service's
+      # own .env (env_file above), which builds it from POSTGRES_USER/
+      # POSTGRES_PASSWORD/POSTGRES_HOST/POSTGRES_PORT/POSTGRES_DB - only
+      # the host needs overriding for this network, never the password.
+      POSTGRES_HOST: hive-postgres
+      POSTGRES_PORT: "5432"
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
       APIARY_SERVICE_URL: http://apiary-service:8080
@@ -252,10 +319,10 @@ services:
   inspection-postgres:
     image: postgres:16-alpine
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: beebase
-      POSTGRES_PASSWORD: beebase
-      POSTGRES_DB: beebase_inspection
+    # POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB come from
+    # inspection-service's own .env - not duplicated here.
+    env_file:
+      - ../beebase-inspection-service/.env
     ports:
       - "5435:5432"
     volumes:
@@ -268,25 +335,47 @@ services:
 
   inspection-migrate:
     image: migrate/migrate:v4.19.0
+    # Credentials come from inspection-service's own .env via env_file
+    # below - never hardcoded here. Only the host/port need overriding
+    # for this network; DATABASE_URL (env_file's own templated value, see
+    # beebase-inspection-service/.env) resolves using this container's
+    # final merged environment at container start.
+    env_file:
+      - ../beebase-inspection-service/.env
+    environment:
+      POSTGRES_HOST: inspection-postgres
+      POSTGRES_PORT: "5432"
     depends_on:
       inspection-postgres:
         condition: service_healthy
     volumes:
       - ../beebase-inspection-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
     command:
-      - -path=/migrations
-      - -database=postgres://beebase:beebase@inspection-postgres:5432/beebase_inspection?sslmode=disable
-      - up
+      - 'migrate -path=/migrations -database "$$DATABASE_URL" up'
 
   inspection-service:
     build:
       context: ../beebase-inspection-service
     restart: unless-stopped
+    # Baseline config comes from inspection-service's own .env - not
+    # duplicated here. `environment:` below still wins over this for any
+    # key both define (the in-network URLs/hosts it must have here
+    # instead of the localhost ones inspection-service's own .env uses
+    # for standalone dev).
+    env_file:
+      - ../beebase-inspection-service/.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
-      DATABASE_URL: postgres://beebase:beebase@inspection-postgres:5432/beebase_inspection?sslmode=disable
+      # DATABASE_URL itself is not set here: it comes from
+      # inspection-service's own .env (env_file above), which builds it
+      # from POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_HOST/POSTGRES_PORT/
+      # POSTGRES_DB - only the host needs overriding for this network,
+      # never the password.
+      POSTGRES_HOST: inspection-postgres
+      POSTGRES_PORT: "5432"
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
       HIVE_SERVICE_URL: http://hive-service:8080
@@ -319,10 +408,10 @@ services:
   media-postgres:
     image: postgres:16-alpine
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: beebase
-      POSTGRES_PASSWORD: beebase
-      POSTGRES_DB: beebase_media
+    # POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_DB come from
+    # media-service's own .env - not duplicated here.
+    env_file:
+      - ../beebase-media-service/.env
     ports:
       - "5436:5432"
     volumes:
@@ -335,38 +424,54 @@ services:
 
   media-migrate:
     image: migrate/migrate:v4.19.0
+    # Credentials come from media-service's own .env via env_file below -
+    # never hardcoded here. Only the host/port need overriding for this
+    # network; DATABASE_URL (env_file's own templated value, see
+    # beebase-media-service/.env) resolves using this container's final
+    # merged environment at container start.
+    env_file:
+      - ../beebase-media-service/.env
+    environment:
+      POSTGRES_HOST: media-postgres
+      POSTGRES_PORT: "5432"
     depends_on:
       media-postgres:
         condition: service_healthy
     volumes:
       - ../beebase-media-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
     command:
-      - -path=/migrations
-      - -database=postgres://beebase:beebase@media-postgres:5432/beebase_media?sslmode=disable
-      - up
+      - 'migrate -path=/migrations -database "$$DATABASE_URL" up'
 
   media-service:
     build:
       context: ../beebase-media-service
     restart: unless-stopped
+    # STORAGE_BUCKET and STORAGE_REGION come from media-service's own .env
+    # - not duplicated here - since it's the only service that ever reads
+    # them. Credentials are resolved by the AWS SDK's default chain (e.g.
+    # a local `aws configure` profile) - there's no app-level credential
+    # config. See beebase-media-service's README Storage section and
+    # .env.example. `environment:` below still wins over this for any key
+    # both define.
+    env_file:
+      - ../beebase-media-service/.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info
       HTTP_PORT: "8080"
-      DATABASE_URL: postgres://beebase:beebase@media-postgres:5432/beebase_media?sslmode=disable
+      # DATABASE_URL itself is not set here: it comes from media-service's
+      # own .env (env_file above), which builds it from POSTGRES_USER/
+      # POSTGRES_PASSWORD/POSTGRES_HOST/POSTGRES_PORT/POSTGRES_DB - only
+      # the host needs overriding for this network, never the password.
+      POSTGRES_HOST: media-postgres
+      POSTGRES_PORT: "5432"
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
       # Handed to clients as part of each media item's image_url, so -
       # unlike the AUTH_JWKS_URL above - this must be the gateway's own
       # externally reachable address, not an in-network hostname.
       PUBLIC_BASE_URL: http://localhost:8080
-      # Required: file content is stored in Amazon S3, not the database -
-      # see beebase-media-service's README Storage section. Set these in
-      # .env; there's no local/in-memory fallback. Credentials are
-      # resolved by the AWS SDK's default chain (e.g. a local
-      # `aws configure` profile) - there's no app-level credential config.
-      STORAGE_BUCKET: ${STORAGE_BUCKET:?set STORAGE_BUCKET in .env, see beebase-media-service's .env.example}
-      STORAGE_REGION: ${STORAGE_REGION:?set STORAGE_REGION in .env, see beebase-media-service's .env.example}
     depends_on:
       media-postgres:
         condition: service_healthy
@@ -388,6 +493,13 @@ services:
     build:
       context: ../beebase-statistics-service
     restart: unless-stopped
+    # Baseline config comes from statistics-service's own .env - not
+    # duplicated here. `environment:` below still wins over this for any
+    # key both define (the in-network URLs/hosts it must have here
+    # instead of the localhost ones statistics-service's own .env uses
+    # for standalone dev).
+    env_file:
+      - ../beebase-statistics-service/.env
     environment:
       APP_ENV: production
       LOG_LEVEL: info

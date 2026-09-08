@@ -21,10 +21,16 @@
 #     naming on services that have no image tag of their own (edge,
 #     postgres, redis) - it never substitutes for an image tag.
 #   - Secrets (JWT_PRIVATE_KEY, TOTP_ENCRYPTION_KEY, POSTGRES_*_PASSWORD)
-#     come from a .env file deploy.sh generates fresh from SSM Parameter
-#     Store on every deploy - never committed, never baked into an
-#     image. Media storage needs no static secret at all: media-service
-#     authenticates to S3 via the EC2 instance's IAM role.
+#     come exclusively from the production .env file at
+#     /opt/beebase/config/.env - provisioned once by an operator (see
+#     deploy/.env.example) and never touched by deploy.sh afterwards.
+#     They are never stored in this repo, a release manifest, a Docker
+#     image, or AWS SSM Parameter Store - see deploy/lib/secrets.sh.
+#     Non-secret production config (PUBLIC_DOMAIN, STORAGE_BUCKET, ...)
+#     is still refreshed into the same .env from SSM on every deploy, as
+#     before - see deploy.sh. Media storage needs no static secret at
+#     all: media-service authenticates to S3 via the EC2 instance's IAM
+#     role.
 #
 # Only the `edge` (Caddy) service publishes a host port. Every other
 # container - gateway included - is reachable solely on the internal

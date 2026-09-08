@@ -24,9 +24,15 @@
 # deployment script, manifest library, Caddyfile and docker-compose.prod.yml.
 # The bundle is installed during EC2 bootstrap from an immutable S3 object.
 #
-# Secrets are never stored in the deployment bundle or release manifest.
-# Production secrets/configuration are retrieved from AWS SSM Parameter
-# Store on every deployment and written to /opt/beebase/config/.env.
+# Secrets are never stored in the deployment bundle, release manifest, or
+# AWS SSM Parameter Store - see deploy/lib/secrets.sh for the exact list
+# (POSTGRES_*_PASSWORD, TOTP_ENCRYPTION_KEY, JWT_PRIVATE_KEY). Their only
+# source is the production .env at /opt/beebase/config/.env, provisioned
+# once by an operator (see deploy/.env.example) and preserved by this
+# script across every deploy. Non-secret production config
+# (PUBLIC_DOMAIN, STORAGE_BUCKET, ...) still comes from AWS SSM Parameter
+# Store on every deployment, exactly as before, and is merged into the
+# same .env file alongside the untouched secrets.
 #
 # Usage: deploy.sh <release-manifest.env>
 #   e.g. deploy.sh /opt/beebase/releases/2026.09.07-1.env
@@ -37,6 +43,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=lib/manifest.sh
 source "${SCRIPT_DIR}/lib/manifest.sh"
+# shellcheck source=lib/secrets.sh
+source "${SCRIPT_DIR}/lib/secrets.sh"
 
 COMPOSE_DIR="${BEEBASE_COMPOSE_DIR:-/opt/beebase/compose}"
 CONFIG_DIR="${BEEBASE_CONFIG_DIR:-/opt/beebase/config}"
@@ -100,21 +108,39 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-# --- 6. Retrieve production secrets/config from SSM Parameter Store ---
+# --- 6. Load production secrets from the existing .env, then refresh
+#     everything else (image tags, region/registry, and the non-secret
+#     SSM parameters) around them ---
 #
-# Everything under /beebase/prod - both plain config and SecureString
-# secrets - is retrieved on every deployment.
-#
-# The manifest itself never contains secrets - only image tags and the
-# release id/timestamp.
-
-log "fetching parameters from SSM Parameter Store (${SSM_PATH})"
+# The seven secrets in SECRET_KEYS (deploy/lib/secrets.sh) are never
+# retrieved from SSM, generated, or defaulted here - ${ENV_FILE} is their
+# single source of truth, provisioned once by an operator (see
+# deploy/.env.example) and left byte-for-byte untouched by every deploy
+# after that. Everything else in ${ENV_FILE} - ECR_REGISTRY, AWS_REGION,
+# RELEASE, each service's image tag, and non-secret config such as
+# PUBLIC_DOMAIN/STORAGE_BUCKET - is regenerated fresh on every deploy, as
+# before. The manifest itself never contains secrets either - only image
+# tags and the release id/timestamp.
 
 mkdir -p "${CONFIG_DIR}"
 
+[ -f "${ENV_FILE}" ] \
+  || fail "production .env not found at ${ENV_FILE} - provision it first with the required secrets (see deploy/.env.example); deploy.sh no longer creates it from SSM"
+
+secrets::validate "${ENV_FILE}" \
+  || fail "${ENV_FILE} is missing required production secrets (see above) - add them to ${ENV_FILE} before deploying; deploy.sh no longer sources secrets from SSM"
+
+log "loaded production secrets from ${ENV_FILE} (values are never logged)"
+
 umask 077
 
-: >"${ENV_FILE}"
+# Keys this deploy regenerates below - every other line already in
+# ${ENV_FILE} (the seven secrets, plus anything else an operator has
+# added there) is carried over untouched.
+GENERATED_KEYS=(ECR_REGISTRY AWS_REGION RELEASE "${MANIFEST_SERVICE_TAG_KEYS[@]}")
+GENERATED_KEY_PATTERN="$(IFS='|'; echo "${GENERATED_KEYS[*]}")"
+
+TMP_ENV_FILE="$(mktemp "${CONFIG_DIR}/.env.XXXXXX")"
 
 {
   echo "ECR_REGISTRY=${ECR_REGISTRY}"
@@ -124,9 +150,12 @@ umask 077
   for key in "${MANIFEST_SERVICE_TAG_KEYS[@]}"; do
     echo "${key}=$(manifest::get "${key}")"
   done
-} >>"${ENV_FILE}"
+} >"${TMP_ENV_FILE}"
+
+log "fetching non-secret parameters from SSM Parameter Store (${SSM_PATH})"
 
 NEXT_TOKEN=""
+SSM_PARAM_COUNT=0
 
 while : ; do
   if [ -z "${NEXT_TOKEN}" ]; then
@@ -142,26 +171,56 @@ while : ; do
       --starting-token "${NEXT_TOKEN}")
   fi
 
-  echo "${PAGE}" |
-    jq -r --arg prefix "${SSM_PATH}/" \
-      '.Parameters[]
-       | (.Name | sub("^" + $prefix; "")) as $key
-       | "\($key)=\(.Value)"' \
-    >>"${ENV_FILE}"
+  ALL_LINES=$(
+    echo "${PAGE}" |
+      jq -r --arg prefix "${SSM_PATH}/" \
+        '.Parameters[]
+         | (.Name | sub("^" + $prefix; "")) as $key
+         | "\($key)=\(.Value)"'
+  )
+
+  # Defense in depth: the seven secrets must never come from SSM, even if
+  # a stale parameter is still sitting under ${SSM_PATH} - skip it rather
+  # than let it silently override (or get logged from) the production
+  # .env. Only the key name is ever logged, never the value.
+  while IFS= read -r line; do
+    [ -n "${line}" ] || continue
+
+    key="${line%%=*}"
+
+    if secrets::is_secret_key "${key}"; then
+      log "ignoring SSM parameter ${key} - production secrets come from ${ENV_FILE} only"
+      continue
+    fi
+
+    echo "${line}" >>"${TMP_ENV_FILE}"
+    SSM_PARAM_COUNT=$((SSM_PARAM_COUNT + 1))
+  done <<<"${ALL_LINES}"
 
   NEXT_TOKEN=$(echo "${PAGE}" | jq -r '.NextToken // empty')
 
   [ -n "${NEXT_TOKEN}" ] || break
 done
 
+[ "${SSM_PARAM_COUNT}" -gt 0 ] \
+  || fail "expected non-secret production parameters under ${SSM_PATH} (e.g. PUBLIC_DOMAIN, STORAGE_BUCKET), found none - check SSM Parameter Store setup"
+
+# Carry over every line already in the production .env whose key isn't
+# one deploy.sh just regenerated above - this is what preserves the
+# seven secrets (and anything else an operator has added) across every
+# deploy without this script ever reading their values into its own
+# control flow.
+grep -vE "^(${GENERATED_KEY_PATTERN})=" "${ENV_FILE}" >>"${TMP_ENV_FILE}" || true
+
+mv "${TMP_ENV_FILE}" "${ENV_FILE}"
 chmod 600 "${ENV_FILE}"
+
+secrets::validate "${ENV_FILE}" \
+  || fail "${ENV_FILE} lost required production secrets while regenerating non-secret config - this should never happen, aborting"
 
 PARAM_COUNT=$(grep -c '=' "${ENV_FILE}" || true)
 
-log "wrote ${PARAM_COUNT} parameters to ${ENV_FILE} (0600)"
-
-[ "${PARAM_COUNT}" -gt $((3 + ${#MANIFEST_SERVICE_TAG_KEYS[@]})) ] \
-  || fail "expected production secrets under ${SSM_PATH}, found none - check SSM Parameter Store setup"
+log "wrote ${PARAM_COUNT} parameters to ${ENV_FILE} (0600), including ${#SECRET_KEYS[@]} production secrets carried over unchanged"
 
 # --- Ensure the Caddyfile is a regular file ---
 #

@@ -214,8 +214,9 @@ plus the release workflow's run number, e.g. `2026.09.07-1` — not a Git
 SHA and not a substitute for one; it's only ever used for CloudWatch
 log stream naming on containers that have no image tag of their own
 (`edge`, `postgres-*`, `redis`). Manifests never contain secrets: those
-still come from AWS SSM Parameter Store on every deploy, exactly as
-before.
+come exclusively from the production `.env` on the host (see "Secrets,
+images, 'no latest'" below) — SSM only ever supplies non-secret config
+like `PUBLIC_DOMAIN`.
 
 Manifests are **immutable**: once `<release>.env` exists at
 `/opt/beebase/releases/`, nothing ever overwrites it — `deploy.sh`
@@ -287,8 +288,12 @@ deploy.sh /opt/beebase/releases/2026.09.07-1.env
 ```
 
 It validates the manifest (every service tag present, shaped like a
-real Git SHA, never `latest`), regenerates `/opt/beebase/config/.env`
-(mode `0600`) from SSM plus the manifest's tags, authenticates to ECR
+real Git SHA, never `latest`), loads the seven production secrets from
+the existing `/opt/beebase/config/.env` (failing clearly if that file
+or any of those secrets is missing — see "Secrets, images, 'no latest'"
+below), refreshes everything else in that same file (mode `0600`) —
+`ECR_REGISTRY`, `AWS_REGION`, the manifest's tags, and non-secret SSM
+config — around them without touching the secrets, authenticates to ECR
 via the EC2 instance role, **verifies every referenced image and
 migrate image actually exists in ECR before touching anything running**,
 pulls, starts the data layer, runs each service's own migration image,
@@ -317,11 +322,25 @@ manifest is live.
 
 ### Secrets, images, "no latest"
 
-- Secrets (`JWT_PRIVATE_KEY`, `TOTP_ENCRYPTION_KEY`, `POSTGRES_*_PASSWORD`,
-  ...) come from AWS SSM Parameter Store under `/beebase/prod/*` on
-  every deploy — never from Git, GitHub Actions, release manifests, or
-  Docker images. GitHub Actions never has read access to `/beebase/prod/*`
-  — see the IAM policies in `terraform/modules/github-oidc`.
+- The seven production secrets — `JWT_PRIVATE_KEY`, `TOTP_ENCRYPTION_KEY`,
+  and the five `POSTGRES_*_PASSWORD` variables (the full list lives in
+  `deploy/lib/secrets.sh`) — come **exclusively** from the production
+  `.env` at `/opt/beebase/config/.env`. An operator provisions that file
+  once, by hand, from `deploy/.env.example`
+  (`cp deploy/.env.example /opt/beebase/config/.env && chmod 600 ...`
+  then filling in real values) — never from Git, GitHub Actions, release
+  manifests, Docker images, or AWS SSM Parameter Store. `deploy.sh`
+  requires the file and every one of these seven keys to already be
+  present and non-empty before it will deploy, and never logs their
+  values; if a stale SecureString with one of these names is still
+  sitting in SSM, `deploy.sh` ignores it outright (logging only that it
+  did, by key name) rather than letting it override the `.env`.
+- Non-secret production config (`PUBLIC_DOMAIN`, `STORAGE_BUCKET`, ...)
+  is unaffected by the above: it still comes from AWS SSM Parameter
+  Store under `/beebase/prod/*` and is refreshed into the same `.env` on
+  every deploy, exactly as before. GitHub Actions never has read access
+  to `/beebase/prod/*` either way — see the IAM policies in
+  `terraform/modules/github-oidc`.
 - Images come from ECR, one repository per service. CI pushes with the
   `beebase-prod-github-actions-ci` role (push-only, scoped to the 7
   BeeBase ECR repositories); the production host pulls with its own EC2
@@ -343,8 +362,11 @@ manifest is live.
 ```bash
 make deploy-test   # deploy/tests/run_all.sh:
                     #   - manifest parsing/validation (deploy/lib/manifest.sh)
+                    #   - the seven-secret allowlist and validation (deploy/lib/secrets.sh)
                     #   - docker compose config resolves each service's own tag
-                    #   - a mocked deploy.sh run (fail-fast on a missing ECR image, success path)
+                    #   - a mocked deploy.sh run (fail-fast on a missing ECR image or
+                    #     incomplete production .env, secrets carried over unchanged,
+                    #     a stale SSM secret ignored, success path)
                     #   - every service's .github/workflows/ci.yml against the CI checklist
                     #   - .github/workflows/production-release.yml against the release checklist
                     # No AWS account or Docker daemon required.
@@ -407,20 +429,29 @@ repositories, no EC2/SSM/S3 redesign.
 - None of the above are GitHub *Secrets* — no AWS credential, of any
   kind, is ever stored in this repo. The only real secrets in this
   whole system (`JWT_PRIVATE_KEY`, `POSTGRES_*_PASSWORD`, ...) live
-  exclusively in AWS SSM Parameter Store and are never exposed to
-  GitHub Actions at all.
+  exclusively in the production `.env` on the EC2 host and are never
+  exposed to GitHub Actions, AWS SSM Parameter Store, or this repo at
+  all.
 
 ### EC2 bootstrap requirements
 
 - `/opt/beebase/releases/` now exists from first boot (Terraform's
   `user_data.sh.tftpl`) — release manifests and the `current` symlink
   live there.
-- `/opt/beebase/deploy/` (deploy.sh, `lib/manifest.sh`, and the other
-  `deploy/*.sh` ops scripts) and `/opt/beebase/compose/docker-compose.prod.yml`
-  are still bootstrapped/updated manually, same as before this change —
-  they change rarely, unlike the release manifests deployed on every
-  run. When updating them, copy `deploy/lib/manifest.sh` alongside
-  `deploy/deploy.sh` — deploy.sh sources it by relative path.
+- `/opt/beebase/deploy/` (deploy.sh, `lib/manifest.sh`, `lib/secrets.sh`,
+  and the other `deploy/*.sh` ops scripts) and
+  `/opt/beebase/compose/docker-compose.prod.yml` are still
+  bootstrapped/updated manually, same as before this change — they
+  change rarely, unlike the release manifests deployed on every run.
+  When updating them, copy `deploy/lib/manifest.sh` and
+  `deploy/lib/secrets.sh` alongside `deploy/deploy.sh` — deploy.sh
+  sources both by relative path.
+- `/opt/beebase/config/.env` must be provisioned **once**, by hand,
+  before the first deploy: `cp deploy/.env.example
+  /opt/beebase/config/.env`, `chmod 600` it, then fill in real values
+  for the seven secrets it lists. `deploy.sh` refuses to deploy — with a
+  clear error, nothing printed — if this file or any of those seven
+  values is missing; it never creates or completes this file itself.
 
 ## Project structure
 
@@ -436,6 +467,8 @@ internal/
 deploy/
   deploy.sh                  deploys one release manifest to the production stack
   lib/manifest.sh             manifest parsing/validation (shared by deploy.sh and its tests)
+  lib/secrets.sh               the seven-secret allowlist + production .env validation
+  .env.example                 template for /opt/beebase/config/.env — placeholders only
   tests/                      deploy-tooling + workflow tests — see `make deploy-test`
   Caddyfile, backup-postgres.sh, healthcheck-containers.sh, systemd/
 ```
