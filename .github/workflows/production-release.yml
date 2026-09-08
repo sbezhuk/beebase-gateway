@@ -86,7 +86,7 @@ jobs:
             --instance-ids "${EC2_INSTANCE_ID}" \
             --document-name "AWS-RunShellScript" \
             --comment "Validate BeeBase per-service production .env files" \
-            --parameters '{"commands":["bash -lc '\''source /opt/beebase/deploy/lib/env_config.sh && env_config::validate_all \"${BEEBASE_CONFIG_DIR:-/opt/beebase/config}\"'\''"]}' \
+            --parameters '{"commands":["bash -lc '\''unset POSIXLY_CORRECT; set +o posix 2>/dev/null || true; source /opt/beebase/deploy/lib/env_config.sh && env_config::validate_all \"${BEEBASE_CONFIG_DIR:-/opt/beebase/config}\"'\''"]}' \
             --query "Command.CommandId" \
             --output text)
 
