@@ -1,4 +1,11 @@
 #!/bin/bash
+
+# AWS-SSM runs AWS-RunShellScript under a POSIX environment
+# (POSIXLY_CORRECT=y). BeeBase deploy scripts rely on Bash
+# function names containing `::`, which are not valid in POSIX mode.
+unset POSIXLY_CORRECT
+set +o posix
+
 # Deploys one immutable release manifest to the BeeBase production
 # stack. Invoked on the EC2 host itself, normally via the
 # production-release GitHub Actions workflow's `aws ssm send-command`
