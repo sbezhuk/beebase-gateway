@@ -2,12 +2,6 @@
 
 set -euo pipefail
 
-# shellcheck source=deploy/lib/env_config.sh
-source "${DEPLOY_ROOT}/lib/env_config.sh"
-
-# shellcheck source=deploy/lib/manifest.sh
-source "${DEPLOY_ROOT}/lib/manifest.sh"
-
 # Deploys one immutable release manifest to the BeeBase production
 # stack. Invoked on the EC2 host itself, normally via the
 # production-release GitHub Actions workflow's `aws ssm send-command`
