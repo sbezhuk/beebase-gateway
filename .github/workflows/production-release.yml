@@ -38,7 +38,7 @@ on:
         description: "Statistics-service image tag (Git SHA) - overrides the current production statistics image"
         required: false
       rollback_release:
-        description: "Roll back instead: an existing release id already under /opt/beebase/releases/ (e.g. 2026.09.07-1). When set, every *_image_tag input above is ignored - nothing is rebuilt or re-validated, deploy.sh simply redeploys that manifest's exact images."
+        description: "Existing release id to roll back to, e.g. 2026.09.07-1. Ignores all image tag inputs."
         required: false
 
 permissions:
