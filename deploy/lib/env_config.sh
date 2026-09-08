@@ -54,11 +54,11 @@ declare -gA ENV_TEMPLATE_NAME=(
 # architecture stays uniform and ready for a future secret.
 declare -gA ENV_REQUIRED_KEYS=(
   [gateway]=""
-  [auth]="POSTGRES_PASSWORD JWT_PRIVATE_KEY TOTP_ENCRYPTION_KEY"
-  [apiary]="POSTGRES_PASSWORD"
-  [hive]="POSTGRES_PASSWORD"
-  [inspection]="POSTGRES_PASSWORD"
-  [media]="POSTGRES_PASSWORD STORAGE_BUCKET"
+  [auth]="POSTGRES_AUTH_PASSWORD JWT_PRIVATE_KEY TOTP_ENCRYPTION_KEY"
+  [apiary]="POSTGRES_APIARY_PASSWORD"
+  [hive]="POSTGRES_HIVE_PASSWORD"
+  [inspection]="POSTGRES_INSPECTION_PASSWORD"
+  [media]="POSTGRES_MEDIA_PASSWORD STORAGE_BUCKET"
   [statistics]=""
 )
 
