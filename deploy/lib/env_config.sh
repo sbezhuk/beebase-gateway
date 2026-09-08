@@ -157,7 +157,7 @@ env_config::is_secret_key() {
 # env_config::file_mode <file> - prints the file's permission bits
 # (e.g. "600"), portably across BSD/macOS and GNU stat.
 env_config::file_mode() {
-  stat -f '%OLp' "$1" 2>/dev/null || stat -c '%a' "$1" 2>/dev/null
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%OLp' "$1" 2>/dev/null
 }
 
 # env_config::validate_service <config-dir> <service>
