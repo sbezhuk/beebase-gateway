@@ -1,3 +1,4 @@
+```yaml
 name: Production Release
 
 # Combines the 7 independently-versioned BeeBase services into one
@@ -10,32 +11,31 @@ name: Production Release
 # lives - see deploy/deploy.sh and deploy/lib/manifest.sh.
 #
 # Manual/protected by design: workflow_dispatch only, gated behind the
-# "production" GitHub Environment (configure required reviewers there -
-# see README.md's "Azure DevOps configuration required" ... now
-# "GitHub configuration required" section for the one-time setup).
+# "production" GitHub Environment.
+
 on:
   workflow_dispatch:
     inputs:
       gateway_image_tag:
-        description: "gateway image tag (Git SHA) - required unless rollback_release is set"
+        description: "Gateway image tag (Git SHA) - overrides the current production gateway image"
         required: false
       auth_image_tag:
-        description: "auth-service image tag (Git SHA)"
+        description: "Auth-service image tag (Git SHA) - overrides the current production auth image"
         required: false
       apiary_image_tag:
-        description: "apiary-service image tag (Git SHA)"
+        description: "Apiary-service image tag (Git SHA) - overrides the current production apiary image"
         required: false
       hive_image_tag:
-        description: "hive-service image tag (Git SHA)"
+        description: "Hive-service image tag (Git SHA) - overrides the current production hive image"
         required: false
       inspection_image_tag:
-        description: "inspection-service image tag (Git SHA)"
+        description: "Inspection-service image tag (Git SHA) - overrides the current production inspection image"
         required: false
       media_image_tag:
-        description: "media-service image tag (Git SHA)"
+        description: "Media-service image tag (Git SHA) - overrides the current production media image"
         required: false
       statistics_image_tag:
-        description: "statistics-service image tag (Git SHA)"
+        description: "Statistics-service image tag (Git SHA) - overrides the current production statistics image"
         required: false
       rollback_release:
         description: "Roll back instead: an existing release id already under /opt/beebase/releases/ (e.g. 2026.09.07-1). When set, every *_image_tag input above is ignored - nothing is rebuilt or re-validated, deploy.sh simply redeploys that manifest's exact images."
@@ -43,7 +43,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # exchanged for short-lived AWS credentials below - no long-lived keys stored in GitHub
+  id-token: write
 
 env:
   AWS_REGION: eu-central-1
@@ -51,20 +51,82 @@ env:
 jobs:
   # Resolves the release manifest (or the rollback target) and verifies
   # every image it names actually exists in ECR - all before the SSM
-  # deploy job below ever touches the running stack. Gated by the same
-  # `production` Environment as the deploy job: GitHub only issues the
-  # `environment:production` OIDC claim the release IAM role trusts (see
-  # terraform/modules/github-oidc) to a job declaring this environment,
-  # and a required-reviewers rule on it (configured in GitHub, not here)
-  # blocks BOTH jobs on one approval before either can run.
+  # deploy job below ever touches the running stack.
   resolve-and-validate:
     runs-on: ubuntu-latest
     environment: production
     outputs:
       release: ${{ steps.build.outputs.release }}
       manifest_b64: ${{ steps.build.outputs.manifest_b64 }}
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC - no long-lived keys)
+        if: inputs.rollback_release == ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve current production manifest
+        if: inputs.rollback_release == ''
+        env:
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${EC2_INSTANCE_ID}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Read current BeeBase production release manifest" \
+            --parameters '{"commands":["CURRENT_MANIFEST=$(readlink -f /opt/beebase/releases/current) && test -f \"${CURRENT_MANIFEST}\" && cat \"${CURRENT_MANIFEST}\""]}' \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "SSM command: ${COMMAND_ID}"
+
+          STATUS="Pending"
+
+          for i in $(seq 1 30); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "${COMMAND_ID}" \
+              --instance-id "${EC2_INSTANCE_ID}" \
+              --query "Status" \
+              --output text 2>/dev/null || echo "Pending")
+
+            case "${STATUS}" in
+              Success)
+                break
+                ;;
+              Failed|Cancelled|TimedOut)
+                echo "::error::Failed to read current production manifest: ${STATUS}"
+                aws ssm get-command-invocation \
+                  --command-id "${COMMAND_ID}" \
+                  --instance-id "${EC2_INSTANCE_ID}" \
+                  --query "StandardErrorContent" \
+                  --output text >&2
+                exit 1
+                ;;
+              *)
+                sleep 2
+                ;;
+            esac
+          done
+
+          if [ "${STATUS}" != "Success" ]; then
+            echo "::error::Timed out while reading current production manifest"
+            exit 1
+          fi
+
+          aws ssm get-command-invocation \
+            --command-id "${COMMAND_ID}" \
+            --instance-id "${EC2_INSTANCE_ID}" \
+            --query "StandardOutputContent" \
+            --output text > /tmp/current-production.env
+
+          echo "--- current production manifest ---"
+          cat /tmp/current-production.env
 
       - name: Build and validate the release manifest (or resolve a rollback target)
         id: build
@@ -78,31 +140,57 @@ jobs:
           STATISTICS_IMAGE_TAG: ${{ inputs.statistics_image_tag }}
           ROLLBACK_RELEASE: ${{ inputs.rollback_release }}
           RUN_NUMBER: ${{ github.run_number }}
+          CURRENT_MANIFEST_FILE: /tmp/current-production.env
         run: |
           set -euo pipefail
+
           # shellcheck source=deploy/lib/manifest.sh
           source deploy/lib/manifest.sh
 
           if [ -n "${ROLLBACK_RELEASE}" ]; then
             [[ "${ROLLBACK_RELEASE}" =~ ^[A-Za-z0-9._-]+$ ]] \
-              || { echo "::error::rollback_release '${ROLLBACK_RELEASE}' contains characters other than [A-Za-z0-9._-]"; exit 1; }
+              || {
+                echo "::error::rollback_release '${ROLLBACK_RELEASE}' contains characters other than [A-Za-z0-9._-]"
+                exit 1
+              }
+
             echo "Rolling back to existing release ${ROLLBACK_RELEASE} - no new manifest, nothing rebuilt, nothing re-validated here (deploy.sh re-validates on the host regardless)."
-            echo "release=${ROLLBACK_RELEASE}" >>"${GITHUB_OUTPUT}"
-            echo "manifest_b64=" >>"${GITHUB_OUTPUT}"
+
+            echo "release=${ROLLBACK_RELEASE}" >> "${GITHUB_OUTPUT}"
+            echo "manifest_b64=" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
+          # Resolve the current production manifest first.
+          # Explicit workflow inputs override only the services selected
+          # by the user; all other services keep their current production SHA.
+          manifest::parse "${CURRENT_MANIFEST_FILE}"
+          manifest::validate
+
+          GATEWAY_IMAGE_TAG="${GATEWAY_IMAGE_TAG:-${MANIFEST[GATEWAY_IMAGE_TAG]}}"
+          AUTH_IMAGE_TAG="${AUTH_IMAGE_TAG:-${MANIFEST[AUTH_IMAGE_TAG]}}"
+          APIARY_IMAGE_TAG="${APIARY_IMAGE_TAG:-${MANIFEST[APIARY_IMAGE_TAG]}}"
+          HIVE_IMAGE_TAG="${HIVE_IMAGE_TAG:-${MANIFEST[HIVE_IMAGE_TAG]}}"
+          INSPECTION_IMAGE_TAG="${INSPECTION_IMAGE_TAG:-${MANIFEST[INSPECTION_IMAGE_TAG]}}"
+          MEDIA_IMAGE_TAG="${MEDIA_IMAGE_TAG:-${MANIFEST[MEDIA_IMAGE_TAG]}}"
+          STATISTICS_IMAGE_TAG="${STATISTICS_IMAGE_TAG:-${MANIFEST[STATISTICS_IMAGE_TAG]}}"
+
           RELEASE="$(date -u +%Y.%m.%d)-${RUN_NUMBER}"
           MANIFEST_FILE="$(mktemp)"
+
           {
             echo "RELEASE=${RELEASE}"
             echo "CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             for key in "${MANIFEST_SERVICE_TAG_KEYS[@]}"; do
               value="${!key:-}"
-              [ -n "${value}" ] || { echo "::error::${key} is required unless rollback_release is set"; exit 1; }
+              [ -n "${value}" ] \
+                || {
+                  echo "::error::${key} could not be resolved from current production manifest or workflow input"
+                  exit 1
+                }
               echo "${key}=${value}"
             done
-          } >"${MANIFEST_FILE}"
+          } > "${MANIFEST_FILE}"
 
           manifest::parse "${MANIFEST_FILE}"
           manifest::validate
@@ -110,56 +198,68 @@ jobs:
           echo "--- resolved release manifest ---"
           cat "${MANIFEST_FILE}"
 
-          echo "release=${RELEASE}" >>"${GITHUB_OUTPUT}"
-          echo "manifest_b64=$(base64 -w0 "${MANIFEST_FILE}")" >>"${GITHUB_OUTPUT}"
-
-      - name: Configure AWS credentials (OIDC - no long-lived keys)
-        if: inputs.rollback_release == ''
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.AWS_RELEASE_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          echo "release=${RELEASE}" >> "${GITHUB_OUTPUT}"
+          echo "manifest_b64=$(base64 -w0 "${MANIFEST_FILE}")" >> "${GITHUB_OUTPUT}"
 
       - name: Verify every manifest image exists in ECR
         if: inputs.rollback_release == ''
         env:
-          GATEWAY_IMAGE_TAG: ${{ inputs.gateway_image_tag }}
-          AUTH_IMAGE_TAG: ${{ inputs.auth_image_tag }}
-          APIARY_IMAGE_TAG: ${{ inputs.apiary_image_tag }}
-          HIVE_IMAGE_TAG: ${{ inputs.hive_image_tag }}
-          INSPECTION_IMAGE_TAG: ${{ inputs.inspection_image_tag }}
-          MEDIA_IMAGE_TAG: ${{ inputs.media_image_tag }}
-          STATISTICS_IMAGE_TAG: ${{ inputs.statistics_image_tag }}
+          MANIFEST_B64: ${{ steps.build.outputs.manifest_b64 }}
         run: |
           set -euo pipefail
+
           # shellcheck source=deploy/lib/manifest.sh
           source deploy/lib/manifest.sh
 
+          MANIFEST_FILE="$(mktemp)"
+          echo "${MANIFEST_B64}" | base64 -d > "${MANIFEST_FILE}"
+
+          manifest::parse "${MANIFEST_FILE}"
+          manifest::validate
+
           for key in "${MANIFEST_SERVICE_TAG_KEYS[@]}"; do
             repo="${MANIFEST_ECR_REPO[${key}]}"
-            tag="${!key}"
+            tag="${MANIFEST[${key}]}"
+
             echo "checking ${repo}:${tag}"
-            aws ecr describe-images --region "${AWS_REGION}" --repository-name "${repo}" --image-ids "imageTag=${tag}" >/dev/null \
-              || { echo "::error::image ${repo}:${tag} (${key}) not found in ECR - refusing to release"; exit 1; }
+
+            aws ecr describe-images \
+              --region "${AWS_REGION}" \
+              --repository-name "${repo}" \
+              --image-ids "imageTag=${tag}" \
+              >/dev/null \
+              || {
+                echo "::error::image ${repo}:${tag} (${key}) not found in ECR - refusing to release"
+                exit 1
+              }
           done
+
           for key in "${MANIFEST_MIGRATE_TAG_KEYS[@]}"; do
             repo="${MANIFEST_ECR_REPO[${key}]}"
-            tag="${!key}-migrate"
+            tag="${MANIFEST[${key}]}-migrate"
+
             echo "checking ${repo}:${tag}"
-            aws ecr describe-images --region "${AWS_REGION}" --repository-name "${repo}" --image-ids "imageTag=${tag}" >/dev/null \
-              || { echo "::error::image ${repo}:${tag} not found in ECR - refusing to release"; exit 1; }
+
+            aws ecr describe-images \
+              --region "${AWS_REGION}" \
+              --repository-name "${repo}" \
+              --image-ids "imageTag=${tag}" \
+              >/dev/null \
+              || {
+                echo "::error::image ${repo}:${tag} (${key}) not found in ECR - refusing to release"
+                exit 1
+              }
           done
+
           echo "all required images present in ECR"
 
-  # Ships the manifest to the EC2 host and runs deploy.sh against it via
-  # SSM - deploy.sh itself re-validates the manifest, re-checks ECR,
-  # pulls, migrates, recreates the stack, health-checks and smoke-tests.
-  # This job only ever orchestrates that one command; it never
-  # reimplements any part of it.
+  # Ships the resolved immutable manifest to the EC2 host and runs
+  # deploy.sh against it via SSM.
   deploy:
     needs: resolve-and-validate
     runs-on: ubuntu-latest
     environment: production
+
     steps:
       - name: Configure AWS credentials (OIDC - no long-lived keys)
         uses: aws-actions/configure-aws-credentials@v4
@@ -174,9 +274,14 @@ jobs:
           EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
         run: |
           set -euo pipefail
+
           MANIFEST_FILE="/opt/beebase/releases/${RELEASE}.env"
 
-          COMMANDS=("set -euo pipefail" "mkdir -p /opt/beebase/releases")
+          COMMANDS=(
+            "set -euo pipefail"
+            "mkdir -p /opt/beebase/releases"
+          )
+
           if [ -n "${MANIFEST_B64}" ]; then
             COMMANDS+=(
               "if [ -e '${MANIFEST_FILE}' ]; then echo 'release manifest ${MANIFEST_FILE} already exists - releases are immutable' >&2; exit 1; fi"
@@ -184,44 +289,61 @@ jobs:
               "echo '${MANIFEST_B64}' | base64 -d > '${MANIFEST_FILE}'"
             )
           else
-            COMMANDS+=("test -f '${MANIFEST_FILE}' || { echo 'rollback target ${MANIFEST_FILE} does not exist on the host' >&2; exit 1; }")
+            COMMANDS+=(
+              "test -f '${MANIFEST_FILE}' || { echo 'rollback target ${MANIFEST_FILE} does not exist on the host' >&2; exit 1; }"
+            )
           fi
-          COMMANDS+=("/opt/beebase/deploy/deploy.sh '${MANIFEST_FILE}'")
+
+          COMMANDS+=(
+            "/opt/beebase/deploy/deploy.sh '${MANIFEST_FILE}'"
+          )
 
           # Built with jq (not hand-escaped string interpolation) so the
           # base64 manifest payload and every command are safely
-          # JSON-encoded regardless of what characters they contain.
-          PARAMS_JSON=$(printf '%s\n' "${COMMANDS[@]}" | jq -R -s -c '{commands: (split("\n")[:-1])}')
+          # JSON-encoded regardless of their contents.
+          PARAMS_JSON=$(
+            printf '%s\n' "${COMMANDS[@]}" |
+              jq -R -s -c '{commands: (split("\n")[:-1])}'
+          )
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${EC2_INSTANCE_ID}" \
             --document-name "AWS-RunShellScript" \
             --comment "Release ${RELEASE}" \
             --parameters "${PARAMS_JSON}" \
-            --query "Command.CommandId" --output text)
+            --query "Command.CommandId" \
+            --output text)
 
           echo "SSM command: ${COMMAND_ID}"
 
-          # Poll until the command finishes - deploy.sh itself runs the
-          # full stack + migrations + health checks + smoke tests, so
-          # this is the single gate the whole release hangs on.
-          # shellcheck disable=SC2034 # loop counter only bounds the retry count
+          # deploy.sh performs the complete deployment gate:
+          # image checks, pulls, migrations, recreation, health checks
+          # and smoke tests.
           for i in $(seq 1 90); do
             STATUS=$(aws ssm get-command-invocation \
               --command-id "${COMMAND_ID}" \
               --instance-id "${EC2_INSTANCE_ID}" \
-              --query "Status" --output text 2>/dev/null || echo "Pending")
+              --query "Status" \
+              --output text 2>/dev/null || echo "Pending")
+
             case "${STATUS}" in
-              Success) break ;;
+              Success)
+                break
+                ;;
               Failed|Cancelled|TimedOut)
                 echo "::error::Release failed with status: ${STATUS}"
+
                 aws ssm get-command-invocation \
                   --command-id "${COMMAND_ID}" \
                   --instance-id "${EC2_INSTANCE_ID}" \
-                  --query "StandardErrorContent" --output text >&2
+                  --query "StandardErrorContent" \
+                  --output text >&2
+
                 exit 1
                 ;;
-              *) sleep 10 ;;
+              *)
+                sleep 10
+                ;;
             esac
           done
 
@@ -231,7 +353,10 @@ jobs:
           fi
 
           echo "--- deploy.sh output ---"
+
           aws ssm get-command-invocation \
             --command-id "${COMMAND_ID}" \
             --instance-id "${EC2_INSTANCE_ID}" \
-            --query "StandardOutputContent" --output text
+            --query "StandardOutputContent" \
+            --output text
+```
