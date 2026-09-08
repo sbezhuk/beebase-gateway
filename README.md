@@ -246,7 +246,7 @@ in this repo — distinct from this repo's own `ci.yml` — that:
 4. Validates, on the host itself over SSM, that every one of the 7
    services' own production `.env` files exists, is mode `0600` and has
    every required key set — reusing `deploy/lib/env_config.sh`'s own
-   `env_config::validate_all` rather than reimplementing that check —
+   `env_config_validate_all` rather than reimplementing that check —
    before any image or manifest work happens, so a misconfigured host
    fails the run in seconds instead of after several minutes of image
    pulls and migrations `deploy.sh` then has to abandon (`deploy.sh`

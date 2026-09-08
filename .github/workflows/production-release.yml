@@ -86,7 +86,7 @@ jobs:
             --instance-ids "${EC2_INSTANCE_ID}" \
             --document-name "AWS-RunShellScript" \
             --comment "Validate BeeBase per-service production .env files" \
-            --parameters '{"commands":["bash -lc '\''unset POSIXLY_CORRECT; set +o posix 2>/dev/null || true; source /opt/beebase/deploy/lib/env_config.sh && env_config::validate_all \"${BEEBASE_CONFIG_DIR:-/opt/beebase/config}\"'\''"]}' \
+            --parameters '{"commands":["bash -lc '\''source /opt/beebase/deploy/lib/env_config.sh && env_config_validate_all \"${BEEBASE_CONFIG_DIR:-/opt/beebase/config}\"'\''"]}' \
             --query "Command.CommandId" \
             --output text)
 
@@ -222,8 +222,8 @@ jobs:
           # Resolve the current production manifest first.
           # Explicit workflow inputs override only the services selected
           # by the user; all other services keep their current production SHA.
-          manifest::parse "${CURRENT_MANIFEST_FILE}"
-          manifest::validate
+          manifest_parse "${CURRENT_MANIFEST_FILE}"
+          manifest_validate
 
           GATEWAY_IMAGE_TAG="${GATEWAY_IMAGE_TAG:-${MANIFEST[GATEWAY_IMAGE_TAG]}}"
           AUTH_IMAGE_TAG="${AUTH_IMAGE_TAG:-${MANIFEST[AUTH_IMAGE_TAG]}}"
@@ -250,8 +250,8 @@ jobs:
             done
           } > "${MANIFEST_FILE}"
 
-          manifest::parse "${MANIFEST_FILE}"
-          manifest::validate
+          manifest_parse "${MANIFEST_FILE}"
+          manifest_validate
 
           echo "--- resolved release manifest ---"
           cat "${MANIFEST_FILE}"
@@ -272,8 +272,8 @@ jobs:
           MANIFEST_FILE="$(mktemp)"
           echo "${MANIFEST_B64}" | base64 -d > "${MANIFEST_FILE}"
 
-          manifest::parse "${MANIFEST_FILE}"
-          manifest::validate
+          manifest_parse "${MANIFEST_FILE}"
+          manifest_validate
 
           for key in "${MANIFEST_SERVICE_TAG_KEYS[@]}"; do
             repo="${MANIFEST_ECR_REPO[${key}]}"

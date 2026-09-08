@@ -102,8 +102,8 @@ fi
 #     reimplementing the required-key list in the workflow (which would
 #     drift from deploy.sh's own checks) ---
 
-grep -qF "env_config::validate_all" "${WORKFLOW}"
-check "validates every service's .env via env_config::validate_all before anything else" $([ $? -eq 0 ] && echo 1 || echo 0)
+grep -qF "env_config_validate_all" "${WORKFLOW}"
+check "validates every service's .env via env_config_validate_all before anything else" $([ $? -eq 0 ] && echo 1 || echo 0)
 
 grep -qF "source /opt/beebase/deploy/lib/env_config.sh" "${WORKFLOW}"
 check "sources the deployment bundle's own env_config.sh rather than reimplementing validation" $([ $? -eq 0 ] && echo 1 || echo 0)

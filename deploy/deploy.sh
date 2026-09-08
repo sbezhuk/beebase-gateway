@@ -2,9 +2,6 @@
 
 set -euo pipefail
 
-unset POSIXLY_CORRECT
-set +o posix 2>/dev/null || true
-
 # shellcheck source=deploy/lib/env_config.sh
 source "${DEPLOY_ROOT}/lib/env_config.sh"
 
@@ -106,18 +103,18 @@ MANIFEST_FILE="${1:-}"
 [ -n "${MANIFEST_FILE}" ] \
   || fail "usage: deploy.sh <release-manifest.env> (e.g. /opt/beebase/releases/2026.09.07-1.env)"
 
-manifest::parse "${MANIFEST_FILE}" \
+manifest_parse "${MANIFEST_FILE}" \
   || fail "manifest '${MANIFEST_FILE}' failed to parse (see above)"
 
-manifest::validate \
+manifest_validate \
   || fail "manifest '${MANIFEST_FILE}' failed validation (see above)"
 
-RELEASE="$(manifest::get RELEASE)"
+RELEASE="$(manifest_get RELEASE)"
 
 log "deploying release ${RELEASE} from ${MANIFEST_FILE}"
 
 for key in "${MANIFEST_SERVICE_TAG_KEYS[@]}"; do
-  log "  ${key}=$(manifest::get "${key}")"
+  log "  ${key}=$(manifest_get "${key}")"
 done
 
 # --- Rollback safety: if this exact release was deployed successfully
@@ -143,7 +140,7 @@ if [ -d "${CONFIG_SNAPSHOT_DIR}" ]; then
 
   for service in "${ENV_SERVICES[@]}"; do
     snapshot_file="${CONFIG_SNAPSHOT_DIR}/${ENV_FILE_NAME[${service}]}"
-    live_file="$(env_config::file_path "${CONFIG_DIR}" "${service}")"
+    live_file="$(env_config_file_path "${CONFIG_DIR}" "${service}")"
 
     [ -f "${snapshot_file}" ] \
       || fail "config snapshot for release ${RELEASE} is missing ${ENV_FILE_NAME[${service}]} - refusing to deploy with a partial rollback snapshot"
@@ -164,7 +161,7 @@ fi
 
 log "validating each of the 7 services' production .env files in ${CONFIG_DIR}"
 
-env_config::validate_all "${CONFIG_DIR}" \
+env_config_validate_all "${CONFIG_DIR}" \
   || fail "one or more service .env files in ${CONFIG_DIR} failed validation (see above) - provision/fix them before deploying; deploy.sh never creates or completes these files itself"
 
 log "all 7 service .env files present, mode 0600, and complete"
@@ -205,7 +202,7 @@ TMP_DEPLOY_ENV_FILE="$(mktemp "${CONFIG_DIR}/.deploy.env.XXXXXX")"
   echo "BEEBASE_CONFIG_DIR=${CONFIG_DIR}"
 
   for key in "${MANIFEST_SERVICE_TAG_KEYS[@]}"; do
-    echo "${key}=$(manifest::get "${key}")"
+    echo "${key}=$(manifest_get "${key}")"
   done
 
   # Copy each service's own POSTGRES_PASSWORD into deploy.env under the
@@ -215,9 +212,9 @@ TMP_DEPLOY_ENV_FILE="$(mktemp "${CONFIG_DIR}/.deploy.env.XXXXXX")"
   # straight from the authoritative per-service file; never echoed
   # anywhere else, including this script's own log output.
   for service in "${!ENV_DB_INTERPOLATION_KEY[@]}"; do
-    service_file="$(env_config::file_path "${CONFIG_DIR}" "${service}")"
+    service_file="$(env_config_file_path "${CONFIG_DIR}" "${service}")"
     password_key="${ENV_DB_INTERPOLATION_KEY[${service}]}"
-    password="$(env_config::read_value "${service_file}" "${password_key}")"
+    password="$(env_config_read_value "${service_file}" "${password_key}")"
     echo "${password_key}=${password}"
   done
 } >"${TMP_DEPLOY_ENV_FILE}"
@@ -341,7 +338,7 @@ log "verifying every manifest image exists in ECR"
 
 for key in "${MANIFEST_SERVICE_TAG_KEYS[@]}"; do
   repo="${MANIFEST_ECR_REPO[${key}]}"
-  tag="$(manifest::get "${key}")"
+  tag="$(manifest_get "${key}")"
 
   aws ecr describe-images \
     --region "${AWS_REGION}" \
@@ -353,7 +350,7 @@ done
 
 for key in "${MANIFEST_MIGRATE_TAG_KEYS[@]}"; do
   repo="${MANIFEST_ECR_REPO[${key}]}"
-  tag="$(manifest::get "${key}")-migrate"
+  tag="$(manifest_get "${key}")-migrate"
 
   aws ecr describe-images \
     --region "${AWS_REGION}" \
@@ -557,7 +554,7 @@ mkdir -p "${CONFIG_SNAPSHOT_DIR}"
 chmod 700 "${CONFIG_SNAPSHOT_DIR}"
 
 for service in "${ENV_SERVICES[@]}"; do
-  live_file="$(env_config::file_path "${CONFIG_DIR}" "${service}")"
+  live_file="$(env_config_file_path "${CONFIG_DIR}" "${service}")"
   snapshot_file="${CONFIG_SNAPSHOT_DIR}/${ENV_FILE_NAME[${service}]}"
 
   cp "${live_file}" "${snapshot_file}"

@@ -20,7 +20,7 @@ FAIL=0
 assert_fail() {
   local desc="$1" content="$2" file="${TMP_DIR}/m.env"
   printf '%s' "${content}" >"${file}"
-  if manifest::parse "${file}" >/dev/null 2>&1 && manifest::validate >/dev/null 2>&1; then
+  if manifest_parse "${file}" >/dev/null 2>&1 && manifest_validate >/dev/null 2>&1; then
     echo "FAIL: ${desc} (expected rejection, but manifest was accepted)"
     FAIL=$((FAIL + 1))
   else
@@ -45,7 +45,7 @@ EOF
 
 # --- 1. missing manifest (no file given) ---
 
-if manifest::parse "" >/dev/null 2>&1; then
+if manifest_parse "" >/dev/null 2>&1; then
   echo "FAIL: missing manifest path is rejected"
   FAIL=$((FAIL + 1))
 else
@@ -55,7 +55,7 @@ fi
 
 # --- 2. manifest file that doesn't exist ---
 
-if manifest::parse "${TMP_DIR}/does-not-exist.env" >/dev/null 2>&1; then
+if manifest_parse "${TMP_DIR}/does-not-exist.env" >/dev/null 2>&1; then
   echo "FAIL: nonexistent manifest file is rejected"
   FAIL=$((FAIL + 1))
 else
@@ -116,14 +116,14 @@ assert_fail "empty manifest is rejected" ""
 
 VALID_FILE="${TMP_DIR}/valid.env"
 valid_manifest >"${VALID_FILE}"
-if manifest::parse "${VALID_FILE}" && manifest::validate; then
+if manifest_parse "${VALID_FILE}" && manifest_validate; then
   echo "PASS: well-formed manifest parses and validates"
   PASS=$((PASS + 1))
-  if [ "$(manifest::get RELEASE)" = "2026.09.07-1" ] && [ "$(manifest::get AUTH_IMAGE_TAG)" = "0b4d246bb0b4d246bb0b4d246bb0b4d246bb0b4d" ]; then
-    echo "PASS: parsed values are retrievable via manifest::get"
+  if [ "$(manifest_get RELEASE)" = "2026.09.07-1" ] && [ "$(manifest_get AUTH_IMAGE_TAG)" = "0b4d246bb0b4d246bb0b4d246bb0b4d246bb0b4d" ]; then
+    echo "PASS: parsed values are retrievable via manifest_get"
     PASS=$((PASS + 1))
   else
-    echo "FAIL: parsed values are retrievable via manifest::get"
+    echo "FAIL: parsed values are retrievable via manifest_get"
     FAIL=$((FAIL + 1))
   fi
 else
@@ -140,7 +140,7 @@ COMMENTED_FILE="${TMP_DIR}/commented.env"
   valid_manifest
   echo ""
 } >"${COMMENTED_FILE}"
-if manifest::parse "${COMMENTED_FILE}" && manifest::validate; then
+if manifest_parse "${COMMENTED_FILE}" && manifest_validate; then
   echo "PASS: comments and blank lines are ignored"
   PASS=$((PASS + 1))
 else

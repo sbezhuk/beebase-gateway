@@ -46,7 +46,7 @@ declare -gA ENV_TEMPLATE_NAME=(
 
 # Keys an operator must set directly in that service's own .env before
 # deploy.sh will deploy - every one of these is, by definition, also a
-# secret (see env_config::is_secret_key) and must never be logged.
+# secret (see env_config_is_secret_key) and must never be logged.
 # gateway and statistics-service currently need none: every variable
 # they read is either optional or supplied by docker-compose.prod.yml's
 # `environment:` block (network topology owned by compose - see
@@ -84,17 +84,17 @@ declare -gA ENV_DB_INTERPOLATION_KEY=(
   [media]=POSTGRES_MEDIA_PASSWORD
 )
 
-# env_config::file_path <config-dir> <service>
-env_config::file_path() {
+# env_config_file_path <config-dir> <service>
+env_config_file_path() {
   printf '%s/%s' "$1" "${ENV_FILE_NAME[$2]}"
 }
 
-# env_config::read_value <file> <key>
+# env_config_read_value <file> <key>
 # Same contract as the old secrets::read_value: prints the last-assigned
 # value of <key> in a KEY=VALUE file (a later line wins), empty string
 # with a non-zero return if the key is absent entirely. Only reads -
 # never logs - the value.
-env_config::read_value() {
+env_config_read_value() {
   local file="$1" key="$2" line value found=1
 
   while IFS= read -r line || [ -n "${line}" ]; do
@@ -111,13 +111,13 @@ env_config::read_value() {
   return "${found}"
 }
 
-# env_config::missing_required <file> <service>
+# env_config_missing_required <file> <service>
 # Prints (one per line, names only - never values) any required key for
 # <service> that's absent or empty in <file>. Prints nothing and returns
 # 0 when every required key is present and non-empty (including when
 # <service> requires none at all); returns 1 if the file can't be read
 # or if any key is missing/empty.
-env_config::missing_required() {
+env_config_missing_required() {
   local file="$1" service="$2" key value found rc=0
 
   if [ ! -f "${file}" ] || [ ! -r "${file}" ]; then
@@ -129,7 +129,7 @@ env_config::missing_required() {
   fi
 
   for key in ${ENV_REQUIRED_KEYS[${service}]}; do
-    value="$(env_config::read_value "${file}" "${key}")"
+    value="$(env_config_read_value "${file}" "${key}")"
     found="$?"
 
     if [ "${found}" -ne 0 ] || [ -z "${value}" ]; then
@@ -141,10 +141,10 @@ env_config::missing_required() {
   return "${rc}"
 }
 
-# env_config::is_secret_key <service> <key>
+# env_config_is_secret_key <service> <key>
 # True (rc 0) if <key> is one of <service>'s required keys - used to
 # keep a secret's value out of anything ever logged or copied around.
-env_config::is_secret_key() {
+env_config_is_secret_key() {
   local service="$1" key="$2" candidate
 
   for candidate in ${ENV_REQUIRED_KEYS[${service}]}; do
@@ -154,34 +154,34 @@ env_config::is_secret_key() {
   return 1
 }
 
-# env_config::file_mode <file> - prints the file's permission bits
+# env_config_file_mode <file> - prints the file's permission bits
 # (e.g. "600"), portably across BSD/macOS and GNU stat.
-env_config::file_mode() {
+env_config_file_mode() {
   stat -c '%a' "$1" 2>/dev/null || stat -f '%OLp' "$1" 2>/dev/null
 }
 
-# env_config::validate_service <config-dir> <service>
+# env_config_validate_service <config-dir> <service>
 # Checks one service's env file exists, is mode 0600, and has every
 # required key set to a non-empty value. Reports failures to stderr by
 # name only, never by value.
-env_config::validate_service() {
+env_config_validate_service() {
   local config_dir="$1" service="$2"
   local file mode missing key
 
-  file="$(env_config::file_path "${config_dir}" "${service}")"
+  file="$(env_config_file_path "${config_dir}" "${service}")"
 
   if [ ! -f "${file}" ]; then
     echo "env_config: '${file}' does not exist - provision it before deploying (cp deploy/env-templates/${ENV_TEMPLATE_NAME[${service}]} '${file}' && chmod 600 '${file}')" >&2
     return 1
   fi
 
-  mode="$(env_config::file_mode "${file}")"
+  mode="$(env_config_file_mode "${file}")"
   if [ "${mode}" != "600" ]; then
     echo "env_config: '${file}' has mode ${mode:-unknown}, expected 0600 (chmod 600 '${file}')" >&2
     return 1
   fi
 
-  missing="$(env_config::missing_required "${file}" "${service}")" || true
+  missing="$(env_config_missing_required "${file}" "${service}")" || true
 
   if [ -n "${missing}" ]; then
     echo "env_config: '${file}' is missing required variables:" >&2
@@ -194,15 +194,15 @@ env_config::validate_service() {
   return 0
 }
 
-# env_config::validate_all <config-dir>
+# env_config_validate_all <config-dir>
 # Validates every one of the 7 services' env files, reporting every
 # failure (not just the first) so an operator sees the complete picture
 # in one pass. Returns non-zero if any service failed validation.
-env_config::validate_all() {
+env_config_validate_all() {
   local config_dir="$1" service rc=0
 
   for service in "${ENV_SERVICES[@]}"; do
-    env_config::validate_service "${config_dir}" "${service}" || rc=1
+    env_config_validate_service "${config_dir}" "${service}" || rc=1
   done
 
   return "${rc}"
