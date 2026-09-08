@@ -1,4 +1,3 @@
-```yaml
 name: Production Release
 
 # Combines the 7 independently-versioned BeeBase services into one
@@ -359,4 +358,3 @@ jobs:
             --instance-id "${EC2_INSTANCE_ID}" \
             --query "StandardOutputContent" \
             --output text
-```
