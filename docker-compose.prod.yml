@@ -420,11 +420,12 @@ services:
     restart: unless-stopped
     mem_limit: 48m
     mem_reservation: 16m
+    # LOG_LEVEL can be configured via subscription.env; leaving it unset
+    # falls through to the app's own default ("info" - see internal/config/config.go).
     env_file:
       - ${BEEBASE_CONFIG_DIR:-../config}/subscription.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_SUBSCRIPTION_PASSWORD:?set POSTGRES_SUBSCRIPTION_PASSWORD}@postgres-subscription:5432/beebase_subscription?sslmode=disable
