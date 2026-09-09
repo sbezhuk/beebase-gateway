@@ -227,7 +227,7 @@ jobs:
           # Explicit workflow inputs override only the services selected
           # by the user; all other services keep their current production SHA.
           manifest_parse "${CURRENT_MANIFEST_FILE}"
-          manifest_validate
+          manifest_validate || echo "Notice: current manifest may lack newly introduced services, full validation will run on resolved manifest"
 
           GATEWAY_IMAGE_TAG="${GATEWAY_IMAGE_TAG:-${MANIFEST[GATEWAY_IMAGE_TAG]}}"
           AUTH_IMAGE_TAG="${AUTH_IMAGE_TAG:-${MANIFEST[AUTH_IMAGE_TAG]}}"
