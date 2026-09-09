@@ -137,6 +137,7 @@ services:
       INSPECTION_SERVICE_URL: http://inspection-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
       STATISTICS_SERVICE_URL: http://statistics-service:8080
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
     networks: [beebase]
     depends_on:
       auth-service: { condition: service_healthy }
@@ -145,6 +146,7 @@ services:
       inspection-service: { condition: service_healthy }
       media-service: { condition: service_healthy }
       statistics-service: { condition: service_healthy }
+      subscription-service: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 5s
@@ -411,6 +413,37 @@ services:
         awslogs-stream: app-${STATISTICS_IMAGE_TAG:?set STATISTICS_IMAGE_TAG to statistics-service's Git commit SHA}
         awslogs-create-group: "true"
 
+  # --- subscription-service ---
+
+  subscription-service:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-subscription-service:${SUBSCRIPTION_IMAGE_TAG:?set SUBSCRIPTION_IMAGE_TAG to subscription-service's Git commit SHA}
+    restart: unless-stopped
+    mem_limit: 48m
+    mem_reservation: 16m
+    env_file:
+      - ${BEEBASE_CONFIG_DIR:-../config}/subscription.env
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      HTTP_PORT: "8080"
+      GOMEMLIMIT: 40MiB
+      DATABASE_URL: postgres://beebase:${POSTGRES_SUBSCRIPTION_PASSWORD:?set POSTGRES_SUBSCRIPTION_PASSWORD}@postgres-subscription:5432/beebase_subscription?sslmode=disable
+    networks: [beebase]
+    depends_on:
+      postgres-subscription: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-subscription-service
+        awslogs-stream: app-${SUBSCRIPTION_IMAGE_TAG:?set SUBSCRIPTION_IMAGE_TAG to subscription-service's Git commit SHA}
+        awslogs-create-group: "true"
+
   # --- PostgreSQL, one container per bounded context, each on its own
   #     bind-mounted directory on the dedicated EBS data volume. No host
   #     port is published for any of them - only reachable from other
@@ -544,6 +577,32 @@ services:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/infra
         awslogs-stream: postgres-media-${RELEASE:?set RELEASE to the release manifest identifier}
+        awslogs-create-group: "true"
+
+  postgres-subscription:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: *pg-tuning-flags
+    mem_limit: 64m
+    mem_reservation: 32m
+    environment:
+      POSTGRES_USER: beebase
+      POSTGRES_PASSWORD: ${POSTGRES_SUBSCRIPTION_PASSWORD:?set POSTGRES_SUBSCRIPTION_PASSWORD}
+      POSTGRES_DB: beebase_subscription
+    volumes:
+      - /mnt/beebase-data/postgres/subscription:/var/lib/postgresql/data
+    networks: [beebase]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beebase -d beebase_subscription"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/infra
+        awslogs-stream: postgres-subscription-${RELEASE:?set RELEASE to the release manifest identifier}
         awslogs-create-group: "true"
 
   # --- Redis: shared single-active-session store ---
@@ -683,6 +742,25 @@ services:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-media-service
         awslogs-stream: migrate-${MEDIA_IMAGE_TAG:?set MEDIA_IMAGE_TAG to media-service's Git commit SHA}
+        awslogs-create-group: "true"
+
+  migrate-subscription:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-subscription-service:${SUBSCRIPTION_IMAGE_TAG:?set SUBSCRIPTION_IMAGE_TAG to subscription-service's Git commit SHA}-migrate
+    restart: "no"
+    mem_limit: 64m
+    command:
+      - -path=/migrations
+      - -database=postgres://beebase:${POSTGRES_SUBSCRIPTION_PASSWORD:?set POSTGRES_SUBSCRIPTION_PASSWORD}@postgres-subscription:5432/beebase_subscription?sslmode=disable
+      - up
+    networks: [beebase]
+    depends_on:
+      postgres-subscription: { condition: service_healthy }
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-subscription-service
+        awslogs-stream: migrate-${SUBSCRIPTION_IMAGE_TAG:?set SUBSCRIPTION_IMAGE_TAG to subscription-service's Git commit SHA}
         awslogs-create-group: "true"
 
 networks:

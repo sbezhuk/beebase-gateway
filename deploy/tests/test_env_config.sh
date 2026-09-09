@@ -37,26 +37,27 @@ write_complete_config() {
 
   : >"${dir}/gateway.env"
   cat >"${dir}/auth.env" <<'EOF'
-POSTGRES_PASSWORD=auth-pw
+POSTGRES_AUTH_PASSWORD=auth-pw
 JWT_PRIVATE_KEY=jwt-key
 TOTP_ENCRYPTION_KEY=totp-key
 EOF
-  echo "POSTGRES_PASSWORD=apiary-pw" >"${dir}/apiary.env"
-  echo "POSTGRES_PASSWORD=hive-pw" >"${dir}/hive.env"
-  echo "POSTGRES_PASSWORD=inspection-pw" >"${dir}/inspection.env"
+  echo "POSTGRES_APIARY_PASSWORD=apiary-pw" >"${dir}/apiary.env"
+  echo "POSTGRES_HIVE_PASSWORD=hive-pw" >"${dir}/hive.env"
+  echo "POSTGRES_INSPECTION_PASSWORD=inspection-pw" >"${dir}/inspection.env"
   cat >"${dir}/media.env" <<'EOF'
-POSTGRES_PASSWORD=media-pw
+POSTGRES_MEDIA_PASSWORD=media-pw
 STORAGE_BUCKET=beebase-prod
 EOF
   : >"${dir}/statistics.env"
+  echo "POSTGRES_SUBSCRIPTION_PASSWORD=subscription-pw" >"${dir}/subscription.env"
 
   chmod 600 "${dir}"/*.env
 }
 
-# --- 1. the 7 services and their file names ---
+# --- 1. the 8 services and their file names ---
 
-EXPECTED_SERVICES="gateway auth apiary hive inspection media statistics"
-check "ENV_SERVICES is exactly the 7 BeeBase services" \
+EXPECTED_SERVICES="gateway auth apiary hive inspection media statistics subscription"
+check "ENV_SERVICES is exactly the 8 BeeBase services" \
   $([ "${ENV_SERVICES[*]}" = "${EXPECTED_SERVICES}" ] && echo 1 || echo 0)
 
 declare -A expected_names=(
@@ -67,6 +68,7 @@ declare -A expected_names=(
   [inspection]=inspection.env
   [media]=media.env
   [statistics]=statistics.env
+  [subscription]=subscription.env
 )
 all_names_ok=1
 for service in "${ENV_SERVICES[@]}"; do
@@ -78,20 +80,22 @@ check "each service maps to <service>.env exactly" "${all_names_ok}"
 #     each service owns its own DB password; JWT/TOTP stay with auth;
 #     storage stays with media; gateway/statistics need none ---
 
-check "auth requires POSTGRES_PASSWORD, JWT_PRIVATE_KEY and TOTP_ENCRYPTION_KEY" \
-  $([ "${ENV_REQUIRED_KEYS[auth]}" = "POSTGRES_PASSWORD JWT_PRIVATE_KEY TOTP_ENCRYPTION_KEY" ] && echo 1 || echo 0)
-check "apiary requires only POSTGRES_PASSWORD" \
-  $([ "${ENV_REQUIRED_KEYS[apiary]}" = "POSTGRES_PASSWORD" ] && echo 1 || echo 0)
-check "hive requires only POSTGRES_PASSWORD" \
-  $([ "${ENV_REQUIRED_KEYS[hive]}" = "POSTGRES_PASSWORD" ] && echo 1 || echo 0)
-check "inspection requires only POSTGRES_PASSWORD" \
-  $([ "${ENV_REQUIRED_KEYS[inspection]}" = "POSTGRES_PASSWORD" ] && echo 1 || echo 0)
-check "media requires POSTGRES_PASSWORD and STORAGE_BUCKET" \
-  $([ "${ENV_REQUIRED_KEYS[media]}" = "POSTGRES_PASSWORD STORAGE_BUCKET" ] && echo 1 || echo 0)
+check "auth requires POSTGRES_AUTH_PASSWORD, JWT_PRIVATE_KEY and TOTP_ENCRYPTION_KEY" \
+  $([ "${ENV_REQUIRED_KEYS[auth]}" = "POSTGRES_AUTH_PASSWORD JWT_PRIVATE_KEY TOTP_ENCRYPTION_KEY" ] && echo 1 || echo 0)
+check "apiary requires only POSTGRES_APIARY_PASSWORD" \
+  $([ "${ENV_REQUIRED_KEYS[apiary]}" = "POSTGRES_APIARY_PASSWORD" ] && echo 1 || echo 0)
+check "hive requires only POSTGRES_HIVE_PASSWORD" \
+  $([ "${ENV_REQUIRED_KEYS[hive]}" = "POSTGRES_HIVE_PASSWORD" ] && echo 1 || echo 0)
+check "inspection requires only POSTGRES_INSPECTION_PASSWORD" \
+  $([ "${ENV_REQUIRED_KEYS[inspection]}" = "POSTGRES_INSPECTION_PASSWORD" ] && echo 1 || echo 0)
+check "media requires POSTGRES_MEDIA_PASSWORD and STORAGE_BUCKET" \
+  $([ "${ENV_REQUIRED_KEYS[media]}" = "POSTGRES_MEDIA_PASSWORD STORAGE_BUCKET" ] && echo 1 || echo 0)
 check "gateway requires no production secret" \
   $([ -z "${ENV_REQUIRED_KEYS[gateway]}" ] && echo 1 || echo 0)
 check "statistics requires no production secret" \
   $([ -z "${ENV_REQUIRED_KEYS[statistics]}" ] && echo 1 || echo 0)
+check "subscription requires only POSTGRES_SUBSCRIPTION_PASSWORD" \
+  $([ "${ENV_REQUIRED_KEYS[subscription]}" = "POSTGRES_SUBSCRIPTION_PASSWORD" ] && echo 1 || echo 0)
 
 # --- 3. a complete, correctly-permissioned config directory validates
 #     cleanly, service by service and all at once ---
@@ -103,7 +107,7 @@ all_services_ok=1
 for service in "${ENV_SERVICES[@]}"; do
   env_config_validate_service "${COMPLETE_DIR}" "${service}" >/dev/null 2>&1 || all_services_ok=0
 done
-check "every one of the 7 services validates individually when complete" "${all_services_ok}"
+check "every one of the 8 services validates individually when complete" "${all_services_ok}"
 
 env_config_validate_all "${COMPLETE_DIR}" >/dev/null 2>&1
 check "env_config_validate_all succeeds when every service's .env is complete" $([ $? -eq 0 ] && echo 1 || echo 0)
@@ -206,13 +210,14 @@ declare -A expected_interp=(
   [hive]=POSTGRES_HIVE_PASSWORD
   [inspection]=POSTGRES_INSPECTION_PASSWORD
   [media]=POSTGRES_MEDIA_PASSWORD
+  [subscription]=POSTGRES_SUBSCRIPTION_PASSWORD
 )
 interp_ok=1
-[ "${#ENV_DB_INTERPOLATION_KEY[@]}" -eq 5 ] || interp_ok=0
+[ "${#ENV_DB_INTERPOLATION_KEY[@]}" -eq 6 ] || interp_ok=0
 for service in "${!expected_interp[@]}"; do
   [ "${ENV_DB_INTERPOLATION_KEY[${service}]}" = "${expected_interp[${service}]}" ] || interp_ok=0
 done
-check "ENV_DB_INTERPOLATION_KEY covers exactly the 5 DB-owning services with the right names" "${interp_ok}"
+check "ENV_DB_INTERPOLATION_KEY covers exactly the 6 DB-owning services with the right names" "${interp_ok}"
 
 # --- 11. every deploy/env-templates/*.env.example matches
 #     ENV_TEMPLATE_NAME and never contains a non-empty value for a

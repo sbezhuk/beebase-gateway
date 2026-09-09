@@ -23,6 +23,7 @@ has_migrations() {
     beebase-inspection-service) echo 1 ;;
     beebase-media-service) echo 1 ;;
     beebase-statistics-service) echo 0 ;;
+    beebase-subscription-service) echo 1 ;;
     *) return 1 ;;
   esac
 }
@@ -38,7 +39,8 @@ for repo in \
   beebase-hive-service \
   beebase-inspection-service \
   beebase-media-service \
-  beebase-statistics-service; do
+  beebase-statistics-service \
+  beebase-subscription-service; do
   workflow="${WORKSPACE_DIR}/${repo}/.github/workflows/ci.yml"
 
   if [ ! -f "${workflow}" ]; then

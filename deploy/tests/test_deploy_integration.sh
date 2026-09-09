@@ -32,23 +32,24 @@ seed_complete_service_config() {
 
   : >"${dir}/gateway.env"
   cat >"${dir}/auth.env" <<'EOF'
-POSTGRES_PASSWORD=fake-auth-pw
+POSTGRES_AUTH_PASSWORD=fake-auth-pw
 JWT_PRIVATE_KEY=fake-jwt-key
 TOTP_ENCRYPTION_KEY=fake-totp-key
 EOF
-  echo "POSTGRES_PASSWORD=fake-apiary-pw" >"${dir}/apiary.env"
-  echo "POSTGRES_PASSWORD=fake-hive-pw" >"${dir}/hive.env"
-  echo "POSTGRES_PASSWORD=fake-inspection-pw" >"${dir}/inspection.env"
+  echo "POSTGRES_APIARY_PASSWORD=fake-apiary-pw" >"${dir}/apiary.env"
+  echo "POSTGRES_HIVE_PASSWORD=fake-hive-pw" >"${dir}/hive.env"
+  echo "POSTGRES_INSPECTION_PASSWORD=fake-inspection-pw" >"${dir}/inspection.env"
   cat >"${dir}/media.env" <<'EOF'
-POSTGRES_PASSWORD=fake-media-pw
+POSTGRES_MEDIA_PASSWORD=fake-media-pw
 STORAGE_BUCKET=fake-bucket
 EOF
   : >"${dir}/statistics.env"
+  echo "POSTGRES_SUBSCRIPTION_PASSWORD=fake-subscription-pw" >"${dir}/subscription.env"
 
   chmod 600 "${dir}"/*.env
 }
 
-ALL_FAKE_SECRETS="fake-auth-pw|fake-apiary-pw|fake-hive-pw|fake-inspection-pw|fake-media-pw|fake-totp-key|fake-jwt-key"
+ALL_FAKE_SECRETS="fake-auth-pw|fake-apiary-pw|fake-hive-pw|fake-inspection-pw|fake-media-pw|fake-subscription-pw|fake-totp-key|fake-jwt-key"
 
 # run_deploy <manifest-file> - invokes deploy.sh with a fresh, isolated
 # /opt/beebase-style layout under a temp dir and mocked aws/docker/curl
@@ -106,6 +107,7 @@ HIVE_IMAGE_TAG=f9e257addf9e257addf9e257addf9e257addf9e
 INSPECTION_IMAGE_TAG=8844c5bee8844c5bee8844c5bee8844c5bee8844
 MEDIA_IMAGE_TAG=a5b903bffa5b903bffa5b903bffa5b903bffa5b9
 STATISTICS_IMAGE_TAG=a0877a011a0877a011a0877a011a0877a011a08
+SUBSCRIPTION_IMAGE_TAG=b85447100b85447100b85447100b85447100b854
 EOF
 }
 

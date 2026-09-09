@@ -27,8 +27,9 @@ type Config struct {
 	ApiaryServiceURL     string
 	HiveServiceURL       string
 	InspectionServiceURL string
-	MediaServiceURL      string
-	StatisticsServiceURL string
+	MediaServiceURL         string
+	StatisticsServiceURL    string
+	SubscriptionServiceURL  string
 }
 
 // Load builds a Config from environment variables, falling back to
@@ -45,12 +46,13 @@ func Load() (*Config, error) {
 
 		LogLevel: getEnv("LOG_LEVEL", "info"),
 
-		AuthServiceURL:       getEnv("AUTH_SERVICE_URL", ""),
-		ApiaryServiceURL:     getEnv("APIARY_SERVICE_URL", ""),
-		HiveServiceURL:       getEnv("HIVE_SERVICE_URL", ""),
-		InspectionServiceURL: getEnv("INSPECTION_SERVICE_URL", ""),
-		MediaServiceURL:      getEnv("MEDIA_SERVICE_URL", ""),
-		StatisticsServiceURL: getEnv("STATISTICS_SERVICE_URL", ""),
+		AuthServiceURL:         getEnv("AUTH_SERVICE_URL", ""),
+		ApiaryServiceURL:       getEnv("APIARY_SERVICE_URL", ""),
+		HiveServiceURL:         getEnv("HIVE_SERVICE_URL", ""),
+		InspectionServiceURL:   getEnv("INSPECTION_SERVICE_URL", ""),
+		MediaServiceURL:        getEnv("MEDIA_SERVICE_URL", ""),
+		StatisticsServiceURL:   getEnv("STATISTICS_SERVICE_URL", ""),
+		SubscriptionServiceURL: getEnv("SUBSCRIPTION_SERVICE_URL", ""),
 	}
 
 	required := []struct{ name, value string }{
@@ -60,6 +62,7 @@ func Load() (*Config, error) {
 		{"INSPECTION_SERVICE_URL", cfg.InspectionServiceURL},
 		{"MEDIA_SERVICE_URL", cfg.MediaServiceURL},
 		{"STATISTICS_SERVICE_URL", cfg.StatisticsServiceURL},
+		{"SUBSCRIPTION_SERVICE_URL", cfg.SubscriptionServiceURL},
 	}
 	for _, r := range required {
 		if r.value == "" {

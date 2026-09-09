@@ -542,6 +542,7 @@ services:
       INSPECTION_SERVICE_URL: http://inspection-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
       STATISTICS_SERVICE_URL: http://statistics-service:8080
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
     ports:
       - "8080:8080"
     depends_on:
@@ -557,6 +558,66 @@ services:
         condition: service_healthy
       statistics-service:
         condition: service_healthy
+      subscription-service:
+        condition: service_healthy
+
+  # --- subscription-service ---
+
+  subscription-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - ../beebase-subscription-service/.env
+    environment:
+      POSTGRES_DB: beebase_subscription
+    ports:
+      - "5438:5432"
+    volumes:
+      - beebase_subscription_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beebase -d beebase_subscription"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  subscription-migrate:
+    image: migrate/migrate:v4.19.0
+    env_file:
+      - ../beebase-subscription-service/.env
+    environment:
+      POSTGRES_HOST: subscription-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: beebase_subscription
+    depends_on:
+      subscription-postgres:
+        condition: service_healthy
+    volumes:
+      - ../beebase-subscription-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - 'migrate -path=/migrations -database "$$DATABASE_URL" up'
+
+  subscription-service:
+    build:
+      context: ../beebase-subscription-service
+    restart: unless-stopped
+    env_file:
+      - ../beebase-subscription-service/.env
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: info
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://beebase:beebase@subscription-postgres:5432/beebase_subscription?sslmode=disable
+    depends_on:
+      subscription-postgres:
+        condition: service_healthy
+      subscription-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   beebase_auth_postgres_data:
@@ -564,3 +625,4 @@ volumes:
   beebase_hive_postgres_data:
   beebase_inspection_postgres_data:
   beebase_media_postgres_data:
+  beebase_subscription_postgres_data:

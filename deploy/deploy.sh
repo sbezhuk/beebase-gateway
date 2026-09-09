@@ -367,7 +367,7 @@ ${COMPOSE} pull
 # Explicit, individually-checked migrations ensure that a migration failure
 # stops the deployment before application containers are recreated.
 
-log "starting data layer (postgres x5, redis)"
+log "starting data layer (postgres x6, redis)"
 
 ${COMPOSE} up -d \
   postgres-auth \
@@ -375,6 +375,7 @@ ${COMPOSE} up -d \
   postgres-hive \
   postgres-inspection \
   postgres-media \
+  postgres-subscription \
   redis
 
 for svc in \
@@ -383,6 +384,7 @@ for svc in \
   postgres-hive \
   postgres-inspection \
   postgres-media \
+  postgres-subscription \
   redis
 do
   log "waiting for ${svc} to be healthy"
@@ -413,7 +415,8 @@ for svc in \
   migrate-apiary \
   migrate-hive \
   migrate-inspection \
-  migrate-media
+  migrate-media \
+  migrate-subscription
 do
   log "running ${svc}"
 
@@ -481,6 +484,7 @@ hive-service
 inspection-service
 media-service
 statistics-service
+subscription-service
 "
 
 for svc in ${APP_SERVICES}; do
@@ -530,6 +534,13 @@ echo "${JWKS}" |
   jq -e '.keys | length > 0' \
   >/dev/null \
   || fail "smoke test failed: jwks.json via gateway did not return a signing key"
+
+log "smoke test: GET /test via gateway"
+
+${COMPOSE} exec -T gateway \
+  wget -qO- http://localhost:8080/test |
+  grep -q '"status":"ok"' \
+  || fail "smoke test failed: gateway /test did not return ok"
 
 # --- Snapshot this release's exact configuration for future rollbacks ---
 #

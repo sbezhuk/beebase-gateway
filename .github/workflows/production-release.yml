@@ -36,6 +36,9 @@ on:
       statistics_image_tag:
         description: "Statistics-service image tag (Git SHA) - overrides the current production statistics image"
         required: false
+      subscription_image_tag:
+        description: "Subscription-service image tag (Git SHA) - overrides the current production subscription image"
+        required: false
       rollback_release:
         description: "Existing release id to roll back to, e.g. 2026.09.07-1. Ignores all image tag inputs."
         required: false
@@ -196,6 +199,7 @@ jobs:
           INSPECTION_IMAGE_TAG: ${{ inputs.inspection_image_tag }}
           MEDIA_IMAGE_TAG: ${{ inputs.media_image_tag }}
           STATISTICS_IMAGE_TAG: ${{ inputs.statistics_image_tag }}
+          SUBSCRIPTION_IMAGE_TAG: ${{ inputs.subscription_image_tag }}
           ROLLBACK_RELEASE: ${{ inputs.rollback_release }}
           RUN_NUMBER: ${{ github.run_number }}
           CURRENT_MANIFEST_FILE: /tmp/current-production.env
@@ -232,6 +236,7 @@ jobs:
           INSPECTION_IMAGE_TAG="${INSPECTION_IMAGE_TAG:-${MANIFEST[INSPECTION_IMAGE_TAG]}}"
           MEDIA_IMAGE_TAG="${MEDIA_IMAGE_TAG:-${MANIFEST[MEDIA_IMAGE_TAG]}}"
           STATISTICS_IMAGE_TAG="${STATISTICS_IMAGE_TAG:-${MANIFEST[STATISTICS_IMAGE_TAG]}}"
+          SUBSCRIPTION_IMAGE_TAG="${SUBSCRIPTION_IMAGE_TAG:-${MANIFEST[SUBSCRIPTION_IMAGE_TAG]:-}}"
 
           RELEASE="$(date -u +%Y.%m.%d)-${RUN_NUMBER}"
           MANIFEST_FILE="$(mktemp)"

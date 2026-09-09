@@ -33,6 +33,7 @@ declare -A DATABASES=(
   [postgres-hive]=beebase_hive
   [postgres-inspection]=beebase_inspection
   [postgres-media]=beebase_media
+  [postgres-subscription]=beebase_subscription
 )
 
 for svc in "${!DATABASES[@]}"; do
@@ -53,7 +54,7 @@ for svc in "${!DATABASES[@]}"; do
 done
 
 if [ "${FAILURES}" -gt 0 ]; then
-  fail "${FAILURES} of 5 database backups failed"
+  fail "${FAILURES} of 6 database backups failed"
 fi
 
-log "all 5 database backups completed successfully"
+log "all 6 database backups completed successfully"

@@ -33,7 +33,7 @@ fi
 
 # --- all 7 SHA inputs exist, independently (no shared/common SHA) ---
 
-for input in gateway_image_tag auth_image_tag apiary_image_tag hive_image_tag inspection_image_tag media_image_tag statistics_image_tag; do
+for input in gateway_image_tag auth_image_tag apiary_image_tag hive_image_tag inspection_image_tag media_image_tag statistics_image_tag subscription_image_tag; do
   grep -q "^      ${input}:" "${WORKFLOW}"
   check "workflow_dispatch input '${input}' exists" $([ $? -eq 0 ] && echo 1 || echo 0)
 done
@@ -41,21 +41,21 @@ done
 # Each input must map to its OWN env var (GATEWAY_IMAGE_TAG <- inputs.gateway_image_tag,
 # not e.g. every var reading from the same inputs.image_tag) - this is
 # what "no SHA implicitly shared between repos" means structurally.
-declare -A input_to_var=(
-  [gateway_image_tag]=GATEWAY_IMAGE_TAG
-  [auth_image_tag]=AUTH_IMAGE_TAG
-  [apiary_image_tag]=APIARY_IMAGE_TAG
-  [hive_image_tag]=HIVE_IMAGE_TAG
-  [inspection_image_tag]=INSPECTION_IMAGE_TAG
-  [media_image_tag]=MEDIA_IMAGE_TAG
-  [statistics_image_tag]=STATISTICS_IMAGE_TAG
-)
 all_distinct_ok=1
-for input in "${!input_to_var[@]}"; do
-  var="${input_to_var[${input}]}"
+for pair in \
+  "gateway_image_tag:GATEWAY_IMAGE_TAG" \
+  "auth_image_tag:AUTH_IMAGE_TAG" \
+  "apiary_image_tag:APIARY_IMAGE_TAG" \
+  "hive_image_tag:HIVE_IMAGE_TAG" \
+  "inspection_image_tag:INSPECTION_IMAGE_TAG" \
+  "media_image_tag:MEDIA_IMAGE_TAG" \
+  "statistics_image_tag:STATISTICS_IMAGE_TAG" \
+  "subscription_image_tag:SUBSCRIPTION_IMAGE_TAG"; do
+  input="${pair%%:*}"
+  var="${pair##*:}"
   grep -qF "${var}: \${{ inputs.${input} }}" "${WORKFLOW}" || all_distinct_ok=0
 done
-check "each of the 7 inputs feeds its own distinct *_IMAGE_TAG variable" "${all_distinct_ok}"
+check "each of the 8 inputs feeds its own distinct *_IMAGE_TAG variable" "${all_distinct_ok}"
 
 # --- rollback input is optional convenience, distinct from the 7 SHAs ---
 

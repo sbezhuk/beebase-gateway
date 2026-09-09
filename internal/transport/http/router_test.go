@@ -20,21 +20,23 @@ func (s *stubUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func newTestRouter() (http.Handler, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream) {
+func newTestRouter() (http.Handler, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream) {
 	auth := &stubUpstream{}
 	apiary := &stubUpstream{}
 	media := &stubUpstream{}
 	hive := &stubUpstream{}
 	statistics := &stubUpstream{}
+	subscription := &stubUpstream{}
 	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), Upstreams{
-		Auth:       auth,
-		Apiary:     apiary,
-		Hive:       hive,
-		Inspection: &stubUpstream{},
-		Media:      media,
-		Statistics: statistics,
+		Auth:         auth,
+		Apiary:       apiary,
+		Hive:         hive,
+		Inspection:   &stubUpstream{},
+		Media:        media,
+		Statistics:   statistics,
+		Subscription: subscription,
 	})
-	return r, auth, apiary, media, hive, statistics
+	return r, auth, apiary, media, hive, statistics, subscription
 }
 
 // TestInternalOnlyRoutesAreBlocked locks in the fix: an external client
@@ -57,7 +59,7 @@ func TestInternalOnlyRoutesAreBlocked(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			router, _, apiary, media, hive, _ := newTestRouter()
+			router, _, apiary, media, hive, _, _ := newTestRouter()
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()
@@ -99,11 +101,13 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 		{"profile get", http.MethodGet, "/api/v1/profile", "auth"},
 		{"profile update", http.MethodPut, "/api/v1/profile", "auth"},
 		{"profile delete", http.MethodDelete, "/api/v1/profile", "auth"},
+		{"subscription test", http.MethodGet, "/test", "subscription"},
+		{"subscription api test", http.MethodGet, "/api/v1/subscription/test", "subscription"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			router, auth, apiary, media, hive, statistics := newTestRouter()
+			router, auth, apiary, media, hive, statistics, subscription := newTestRouter()
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()
@@ -133,6 +137,10 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 			case "statistics":
 				if !statistics.called {
 					t.Error("expected the request to reach statistics-service")
+				}
+			case "subscription":
+				if !subscription.called {
+					t.Error("expected the request to reach subscription-service")
 				}
 			}
 		})

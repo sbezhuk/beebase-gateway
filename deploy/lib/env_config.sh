@@ -18,7 +18,7 @@
 # Pure bash, no AWS/Docker calls - unit-tested on its own (see
 # deploy/tests/test_env_config.sh), the same way lib/manifest.sh is.
 
-ENV_SERVICES=(gateway auth apiary hive inspection media statistics)
+ENV_SERVICES=(gateway auth apiary hive inspection media statistics subscription)
 
 # Production env file name for each service, relative to
 # ${BEEBASE_CONFIG_DIR:-/opt/beebase/config}/ - matches
@@ -31,6 +31,7 @@ declare -gA ENV_FILE_NAME=(
   [inspection]=inspection.env
   [media]=media.env
   [statistics]=statistics.env
+  [subscription]=subscription.env
 )
 
 # The template an operator provisions that service's real file from.
@@ -42,6 +43,7 @@ declare -gA ENV_TEMPLATE_NAME=(
   [inspection]=inspection.env.example
   [media]=media.env.example
   [statistics]=statistics.env.example
+  [subscription]=subscription.env.example
 )
 
 # Keys an operator must set directly in that service's own .env before
@@ -60,6 +62,7 @@ declare -gA ENV_REQUIRED_KEYS=(
   [inspection]="POSTGRES_INSPECTION_PASSWORD"
   [media]="POSTGRES_MEDIA_PASSWORD STORAGE_BUCKET"
   [statistics]=""
+  [subscription]="POSTGRES_SUBSCRIPTION_PASSWORD"
 )
 
 # Services whose POSTGRES_PASSWORD deploy.sh must also mirror - by key
@@ -82,6 +85,7 @@ declare -gA ENV_DB_INTERPOLATION_KEY=(
   [hive]=POSTGRES_HIVE_PASSWORD
   [inspection]=POSTGRES_INSPECTION_PASSWORD
   [media]=POSTGRES_MEDIA_PASSWORD
+  [subscription]=POSTGRES_SUBSCRIPTION_PASSWORD
 )
 
 # env_config_file_path <config-dir> <service>

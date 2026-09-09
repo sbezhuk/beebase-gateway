@@ -62,12 +62,13 @@ func blockInternalOnly(next http.Handler, blocked ...methodPath) http.Handler {
 
 // Upstreams holds the reverse proxy for each backend service.
 type Upstreams struct {
-	Auth       http.Handler
-	Apiary     http.Handler
-	Hive       http.Handler
-	Inspection http.Handler
-	Media      http.Handler
-	Statistics http.Handler
+	Auth         http.Handler
+	Apiary       http.Handler
+	Hive         http.Handler
+	Inspection   http.Handler
+	Media        http.Handler
+	Statistics   http.Handler
+	Subscription http.Handler
 }
 
 type statusResponse struct {
@@ -121,6 +122,9 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 		methodPath{http.MethodPost, attachPath},
 	))
 	r.Mount("/api/v1/statistics", up.Statistics)
+	r.Mount("/api/v1/subscription", up.Subscription)
+	r.Mount("/api/v1/subscriptions", up.Subscription)
+	r.Mount("/test", up.Subscription)
 
 	return r
 }

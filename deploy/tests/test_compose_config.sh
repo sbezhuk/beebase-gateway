@@ -47,6 +47,7 @@ STORAGE_BUCKET=beebase-prod
 MARKER=media-marker
 EOF
 echo "MARKER=statistics-marker" >"${CONFIG_DIR}/statistics.env"
+echo "MARKER=subscription-marker" >"${CONFIG_DIR}/subscription.env"
 chmod 600 "${CONFIG_DIR}"/*.env
 
 FAKE_ENV=(
@@ -61,6 +62,7 @@ FAKE_ENV=(
   INSPECTION_IMAGE_TAG=8844c5bee8844c5bee8844c5bee8844c5bee8844
   MEDIA_IMAGE_TAG=a5b903bffa5b903bffa5b903bffa5b903bffa5b9
   STATISTICS_IMAGE_TAG=a0877a011a0877a011a0877a011a0877a011a08
+  SUBSCRIPTION_IMAGE_TAG=b85447100b85447100b85447100b85447100b854
   PUBLIC_DOMAIN=api.beebase.club
   # Mirrors what deploy.sh copies (by name only, never logged) from each
   # service's own env file into deploy.env - see docker-compose.prod.yml's
@@ -70,6 +72,7 @@ FAKE_ENV=(
   POSTGRES_HIVE_PASSWORD=hive-pw
   POSTGRES_INSPECTION_PASSWORD=inspection-pw
   POSTGRES_MEDIA_PASSWORD=media-pw
+  POSTGRES_SUBSCRIPTION_PASSWORD=subscription-pw
 )
 
 # --- 1. config succeeds with every variable set and every service env
@@ -95,6 +98,7 @@ declare -A expect=(
   [beebase-inspection-service]=8844c5bee8844c5bee8844c5bee8844c5bee8844
   [beebase-media-service]=a5b903bffa5b903bffa5b903bffa5b903bffa5b9
   [beebase-statistics-service]=a0877a011a0877a011a0877a011a0877a011a08
+  [beebase-subscription-service]=b85447100b85447100b85447100b85447100b854
 )
 
 all_resolved_ok=1
@@ -117,6 +121,7 @@ declare -A expect_migrate=(
   [beebase-hive-service]=f9e257addf9e257addf9e257addf9e257addf9e
   [beebase-inspection-service]=8844c5bee8844c5bee8844c5bee8844c5bee8844
   [beebase-media-service]=a5b903bffa5b903bffa5b903bffa5b903bffa5b9
+  [beebase-subscription-service]=b85447100b85447100b85447100b85447100b854
 )
 for repo in "${!expect_migrate[@]}"; do
   want="123456789012.dkr.ecr.eu-central-1.amazonaws.com/${repo}:${expect_migrate[${repo}]}-migrate"
@@ -156,6 +161,7 @@ declare -A expect_marker=(
   [inspection-service]=inspection-marker
   [media-service]=media-marker
   [statistics-service]=statistics-marker
+  [subscription-service]=subscription-marker
 )
 
 RESOLVED_JSON=$(env -i "${FAKE_ENV[@]}" PATH="${PATH}" docker compose -f "${COMPOSE_FILE}" config --format json 2>/dev/null)
@@ -177,7 +183,7 @@ done
 
 # infra services (postgres-*, migrate-*, redis, edge) must never see any
 # service's MARKER - they don't use env_file: at all, by design.
-for svc in postgres-auth postgres-apiary postgres-hive postgres-inspection postgres-media migrate-auth migrate-apiary migrate-hive migrate-inspection migrate-media redis edge; do
+for svc in postgres-auth postgres-apiary postgres-hive postgres-inspection postgres-media postgres-subscription migrate-auth migrate-apiary migrate-hive migrate-inspection migrate-media migrate-subscription redis edge; do
   got=$(echo "${RESOLVED_JSON}" | jq -r --arg svc "${svc}" '.services[$svc].environment.MARKER // "none"' 2>/dev/null)
   if [ "${got}" = "none" ]; then
     echo "PASS: ${svc} does not load any service's env file"

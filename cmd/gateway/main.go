@@ -49,8 +49,9 @@ func run() error {
 		"apiary-service":     cfg.ApiaryServiceURL,
 		"hive-service":       cfg.HiveServiceURL,
 		"inspection-service": cfg.InspectionServiceURL,
-		"media-service":      cfg.MediaServiceURL,
-		"statistics-service": cfg.StatisticsServiceURL,
+		"media-service":        cfg.MediaServiceURL,
+		"statistics-service":   cfg.StatisticsServiceURL,
+		"subscription-service": cfg.SubscriptionServiceURL,
 	}
 	proxies := make(map[string]http.Handler, len(upstreams))
 	for name, target := range upstreams {
@@ -62,12 +63,13 @@ func run() error {
 	}
 
 	router := transporthttp.NewRouter(log, transporthttp.Upstreams{
-		Auth:       proxies["auth-service"],
-		Apiary:     proxies["apiary-service"],
-		Hive:       proxies["hive-service"],
-		Inspection: proxies["inspection-service"],
-		Media:      proxies["media-service"],
-		Statistics: proxies["statistics-service"],
+		Auth:         proxies["auth-service"],
+		Apiary:       proxies["apiary-service"],
+		Hive:         proxies["hive-service"],
+		Inspection:   proxies["inspection-service"],
+		Media:        proxies["media-service"],
+		Statistics:   proxies["statistics-service"],
+		Subscription: proxies["subscription-service"],
 	})
 
 	srv := server.New(server.Config{
