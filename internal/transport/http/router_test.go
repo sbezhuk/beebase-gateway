@@ -90,6 +90,7 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 		{"media delete by id", http.MethodDelete, "/api/v1/media/11111111-1111-1111-1111-111111111111", "media"},
 		{"hive create", http.MethodPost, "/api/v1/hives", "hive"},
 		{"hive list", http.MethodGet, "/api/v1/hives", "hive"},
+		{"hive list by apiary", http.MethodGet, "/api/v1/apiaries/11111111-1111-1111-1111-111111111111/hives", "hive"},
 		{"hive update", http.MethodPut, "/api/v1/hives/11111111-1111-1111-1111-111111111111", "hive"},
 		{"apiary create", http.MethodPost, "/api/v1/apiaries", "apiary"},
 		{"apiary list", http.MethodGet, "/api/v1/apiaries", "apiary"},
