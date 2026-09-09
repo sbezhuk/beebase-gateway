@@ -1,0 +1,426 @@
+# Isolated Local Development Stack for BeeBase Backend
+# Run from beebase-gateway with: docker compose --env-file .env.dev -f docker-compose.dev.yml up -d
+
+name: beebase-dev
+
+services:
+  # --- Shared Session Store ---
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # --- Local S3 Object Storage (MinIO) ---
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_PORT:-19000}:9000"
+      - "${MINIO_CONSOLE_PORT:-19001}:9001"
+    volumes:
+      - beebase_dev_minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin} && mc mb --ignore-existing local/${STORAGE_BUCKET:-beebase-media-dev}'
+
+  # --- auth-service ---
+  auth-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-beebase}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-beebase}
+      POSTGRES_DB: ${AUTH_DB_NAME:-beebase_auth_dev}
+    ports:
+      - "${AUTH_POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - beebase_dev_auth_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-beebase} -d ${AUTH_DB_NAME:-beebase_auth_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  auth-migrate:
+    image: migrate/migrate:v4.19.0
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+    volumes:
+      - ../beebase-auth-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@auth-postgres:5432/${AUTH_DB_NAME:-beebase_auth_dev}?sslmode=disable" up'
+
+  auth-service:
+    build:
+      context: ../beebase-auth-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@auth-postgres:5432/${AUTH_DB_NAME:-beebase_auth_dev}?sslmode=disable
+      REDIS_ADDR: redis:6379
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      ACCESS_TOKEN_TTL: 15m
+      REFRESH_TOKEN_TTL: 720h
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY}
+      TOTP_ISSUER: ${TOTP_ISSUER:-BeeBase-Dev}
+      MEDIA_SERVICE_URL: http://media-service:8080
+      APIARY_SERVICE_URL: http://apiary-service:8080
+    depends_on:
+      auth-postgres:
+        condition: service_healthy
+      auth-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- apiary-service ---
+  apiary-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-beebase}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-beebase}
+      POSTGRES_DB: ${APIARY_DB_NAME:-beebase_apiary_dev}
+    ports:
+      - "${APIARY_POSTGRES_PORT:-15433}:5432"
+    volumes:
+      - beebase_dev_apiary_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-beebase} -d ${APIARY_DB_NAME:-beebase_apiary_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  apiary-migrate:
+    image: migrate/migrate:v4.19.0
+    depends_on:
+      apiary-postgres:
+        condition: service_healthy
+    volumes:
+      - ../beebase-apiary-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@apiary-postgres:5432/${APIARY_DB_NAME:-beebase_apiary_dev}?sslmode=disable" up'
+
+  apiary-service:
+    build:
+      context: ../beebase-apiary-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@apiary-postgres:5432/${APIARY_DB_NAME:-beebase_apiary_dev}?sslmode=disable
+      REDIS_ADDR: redis:6379
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}
+      HIVE_SERVICE_URL: http://hive-service:8080
+      MEDIA_SERVICE_URL: http://media-service:8080
+    depends_on:
+      apiary-postgres:
+        condition: service_healthy
+      apiary-migrate:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- hive-service ---
+  hive-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-beebase}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-beebase}
+      POSTGRES_DB: ${HIVE_DB_NAME:-beebase_hive_dev}
+    ports:
+      - "${HIVE_POSTGRES_PORT:-15434}:5432"
+    volumes:
+      - beebase_dev_hive_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-beebase} -d ${HIVE_DB_NAME:-beebase_hive_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  hive-migrate:
+    image: migrate/migrate:v4.19.0
+    depends_on:
+      hive-postgres:
+        condition: service_healthy
+    volumes:
+      - ../beebase-hive-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@hive-postgres:5432/${HIVE_DB_NAME:-beebase_hive_dev}?sslmode=disable" up'
+
+  hive-service:
+    build:
+      context: ../beebase-hive-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@hive-postgres:5432/${HIVE_DB_NAME:-beebase_hive_dev}?sslmode=disable
+      REDIS_ADDR: redis:6379
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}
+      APIARY_SERVICE_URL: http://apiary-service:8080
+      INSPECTION_SERVICE_URL: http://inspection-service:8080
+      MEDIA_SERVICE_URL: http://media-service:8080
+    depends_on:
+      hive-postgres:
+        condition: service_healthy
+      hive-migrate:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_healthy
+      apiary-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- inspection-service ---
+  inspection-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-beebase}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-beebase}
+      POSTGRES_DB: ${INSPECTION_DB_NAME:-beebase_inspection_dev}
+    ports:
+      - "${INSPECTION_POSTGRES_PORT:-15435}:5432"
+    volumes:
+      - beebase_dev_inspection_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-beebase} -d ${INSPECTION_DB_NAME:-beebase_inspection_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  inspection-migrate:
+    image: migrate/migrate:v4.19.0
+    depends_on:
+      inspection-postgres:
+        condition: service_healthy
+    volumes:
+      - ../beebase-inspection-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@inspection-postgres:5432/${INSPECTION_DB_NAME:-beebase_inspection_dev}?sslmode=disable" up'
+
+  inspection-service:
+    build:
+      context: ../beebase-inspection-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@inspection-postgres:5432/${INSPECTION_DB_NAME:-beebase_inspection_dev}?sslmode=disable
+      REDIS_ADDR: redis:6379
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}
+      HIVE_SERVICE_URL: http://hive-service:8080
+      MEDIA_SERVICE_URL: http://media-service:8080
+    depends_on:
+      inspection-postgres:
+        condition: service_healthy
+      inspection-migrate:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_healthy
+      hive-service:
+        condition: service_healthy
+      media-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- media-service ---
+  media-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-beebase}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-beebase}
+      POSTGRES_DB: ${MEDIA_DB_NAME:-beebase_media_dev}
+    ports:
+      - "${MEDIA_POSTGRES_PORT:-15436}:5432"
+    volumes:
+      - beebase_dev_media_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-beebase} -d ${MEDIA_DB_NAME:-beebase_media_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  media-migrate:
+    image: migrate/migrate:v4.19.0
+    depends_on:
+      media-postgres:
+        condition: service_healthy
+    volumes:
+      - ../beebase-media-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@media-postgres:5432/${MEDIA_DB_NAME:-beebase_media_dev}?sslmode=disable" up'
+
+  media-service:
+    build:
+      context: ../beebase-media-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@media-postgres:5432/${MEDIA_DB_NAME:-beebase_media_dev}?sslmode=disable
+      REDIS_ADDR: redis:6379
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-beebase-media-dev}
+      STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_FORCE_PATH_STYLE: "true"
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+      AWS_EC2_METADATA_DISABLED: "true"
+    depends_on:
+      media-postgres:
+        condition: service_healthy
+      media-migrate:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- statistics-service ---
+  statistics-service:
+    build:
+      context: ../beebase-statistics-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      HTTP_PORT: "8080"
+      REDIS_ADDR: redis:6379
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      APIARY_SERVICE_URL: http://apiary-service:8080
+      HIVE_SERVICE_URL: http://hive-service:8080
+      INSPECTION_SERVICE_URL: http://inspection-service:8080
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      apiary-service:
+        condition: service_healthy
+      hive-service:
+        condition: service_healthy
+      inspection-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --- Gateway ---
+  gateway:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      HTTP_PORT: "8080"
+      AUTH_SERVICE_URL: http://auth-service:8080
+      APIARY_SERVICE_URL: http://apiary-service:8080
+      HIVE_SERVICE_URL: http://hive-service:8080
+      INSPECTION_SERVICE_URL: http://inspection-service:8080
+      MEDIA_SERVICE_URL: http://media-service:8080
+      STATISTICS_SERVICE_URL: http://statistics-service:8080
+    ports:
+      - "${GATEWAY_PORT:-18080}:8080"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      apiary-service:
+        condition: service_healthy
+      hive-service:
+        condition: service_healthy
+      inspection-service:
+        condition: service_healthy
+      media-service:
+        condition: service_healthy
+      statistics-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  beebase_dev_auth_postgres_data:
+  beebase_dev_apiary_postgres_data:
+  beebase_dev_hive_postgres_data:
+  beebase_dev_inspection_postgres_data:
+  beebase_dev_media_postgres_data:
+  beebase_dev_minio_data:
