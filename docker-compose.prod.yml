@@ -125,7 +125,6 @@ services:
       - ${BEEBASE_CONFIG_DIR:-../config}/gateway.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       # Soft cap for the Go runtime's GC, kept below the hard mem_limit
       # above so the GC reacts to memory pressure before Docker's OOM
@@ -179,7 +178,6 @@ services:
       - ${BEEBASE_CONFIG_DIR:-../config}/auth.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}@postgres-auth:5432/beebase_auth?sslmode=disable
@@ -218,7 +216,6 @@ services:
       - ${BEEBASE_CONFIG_DIR:-../config}/apiary.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_APIARY_PASSWORD:?set POSTGRES_APIARY_PASSWORD}@postgres-apiary:5432/beebase_apiary?sslmode=disable
@@ -257,7 +254,6 @@ services:
       - ${BEEBASE_CONFIG_DIR:-../config}/hive.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_HIVE_PASSWORD:?set POSTGRES_HIVE_PASSWORD}@postgres-hive:5432/beebase_hive?sslmode=disable
@@ -298,7 +294,6 @@ services:
       - ${BEEBASE_CONFIG_DIR:-../config}/inspection.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_INSPECTION_PASSWORD:?set POSTGRES_INSPECTION_PASSWORD}@postgres-inspection:5432/beebase_inspection?sslmode=disable
@@ -342,7 +337,6 @@ services:
       - ${BEEBASE_CONFIG_DIR:-../config}/media.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_MEDIA_PASSWORD:?set POSTGRES_MEDIA_PASSWORD}@postgres-media:5432/beebase_media?sslmode=disable
@@ -385,7 +379,6 @@ services:
       - ${BEEBASE_CONFIG_DIR:-../config}/statistics.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       GOMEMLIMIT: 40MiB
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json

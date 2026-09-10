@@ -50,7 +50,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-beebase}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-beebase}
+      POSTGRES_PASSWORD: ${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}
       POSTGRES_DB: ${AUTH_DB_NAME:-beebase_auth_dev}
     ports:
       - "${AUTH_POSTGRES_PORT:-15432}:5432"
@@ -71,7 +71,7 @@ services:
       - ../beebase-auth-service/migrations:/migrations:ro
     entrypoint: ["sh", "-c"]
     command:
-      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@auth-postgres:5432/${AUTH_DB_NAME:-beebase_auth_dev}?sslmode=disable" up'
+      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}@auth-postgres:5432/${AUTH_DB_NAME:-beebase_auth_dev}?sslmode=disable" up'
 
   auth-service:
     build:
@@ -81,7 +81,7 @@ services:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-debug}
       HTTP_PORT: "8080"
-      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@auth-postgres:5432/${AUTH_DB_NAME:-beebase_auth_dev}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}@auth-postgres:5432/${AUTH_DB_NAME:-beebase_auth_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
       ACCESS_TOKEN_TTL: 15m
@@ -109,7 +109,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-beebase}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-beebase}
+      POSTGRES_PASSWORD: ${POSTGRES_APIARY_PASSWORD:?set POSTGRES_APIARY_PASSWORD}
       POSTGRES_DB: ${APIARY_DB_NAME:-beebase_apiary_dev}
     ports:
       - "${APIARY_POSTGRES_PORT:-15433}:5432"
@@ -130,7 +130,7 @@ services:
       - ../beebase-apiary-service/migrations:/migrations:ro
     entrypoint: ["sh", "-c"]
     command:
-      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@apiary-postgres:5432/${APIARY_DB_NAME:-beebase_apiary_dev}?sslmode=disable" up'
+      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_APIARY_PASSWORD:?set POSTGRES_APIARY_PASSWORD}@apiary-postgres:5432/${APIARY_DB_NAME:-beebase_apiary_dev}?sslmode=disable" up'
 
   apiary-service:
     build:
@@ -140,7 +140,7 @@ services:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-debug}
       HTTP_PORT: "8080"
-      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@apiary-postgres:5432/${APIARY_DB_NAME:-beebase_apiary_dev}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_APIARY_PASSWORD:?set POSTGRES_APIARY_PASSWORD}@apiary-postgres:5432/${APIARY_DB_NAME:-beebase_apiary_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}
@@ -167,7 +167,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-beebase}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-beebase}
+      POSTGRES_PASSWORD: ${POSTGRES_HIVE_PASSWORD:?set POSTGRES_HIVE_PASSWORD}
       POSTGRES_DB: ${HIVE_DB_NAME:-beebase_hive_dev}
     ports:
       - "${HIVE_POSTGRES_PORT:-15434}:5432"
@@ -188,7 +188,7 @@ services:
       - ../beebase-hive-service/migrations:/migrations:ro
     entrypoint: ["sh", "-c"]
     command:
-      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@hive-postgres:5432/${HIVE_DB_NAME:-beebase_hive_dev}?sslmode=disable" up'
+      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_HIVE_PASSWORD:?set POSTGRES_HIVE_PASSWORD}@hive-postgres:5432/${HIVE_DB_NAME:-beebase_hive_dev}?sslmode=disable" up'
 
   hive-service:
     build:
@@ -198,7 +198,7 @@ services:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-debug}
       HTTP_PORT: "8080"
-      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@hive-postgres:5432/${HIVE_DB_NAME:-beebase_hive_dev}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_HIVE_PASSWORD:?set POSTGRES_HIVE_PASSWORD}@hive-postgres:5432/${HIVE_DB_NAME:-beebase_hive_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}
@@ -228,7 +228,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-beebase}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-beebase}
+      POSTGRES_PASSWORD: ${POSTGRES_INSPECTION_PASSWORD:?set POSTGRES_INSPECTION_PASSWORD}
       POSTGRES_DB: ${INSPECTION_DB_NAME:-beebase_inspection_dev}
     ports:
       - "${INSPECTION_POSTGRES_PORT:-15435}:5432"
@@ -249,7 +249,7 @@ services:
       - ../beebase-inspection-service/migrations:/migrations:ro
     entrypoint: ["sh", "-c"]
     command:
-      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@inspection-postgres:5432/${INSPECTION_DB_NAME:-beebase_inspection_dev}?sslmode=disable" up'
+      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_INSPECTION_PASSWORD:?set POSTGRES_INSPECTION_PASSWORD}@inspection-postgres:5432/${INSPECTION_DB_NAME:-beebase_inspection_dev}?sslmode=disable" up'
 
   inspection-service:
     build:
@@ -259,7 +259,7 @@ services:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-debug}
       HTTP_PORT: "8080"
-      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@inspection-postgres:5432/${INSPECTION_DB_NAME:-beebase_inspection_dev}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_INSPECTION_PASSWORD:?set POSTGRES_INSPECTION_PASSWORD}@inspection-postgres:5432/${INSPECTION_DB_NAME:-beebase_inspection_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}
@@ -290,7 +290,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-beebase}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-beebase}
+      POSTGRES_PASSWORD: ${POSTGRES_MEDIA_PASSWORD:?set POSTGRES_MEDIA_PASSWORD}
       POSTGRES_DB: ${MEDIA_DB_NAME:-beebase_media_dev}
     ports:
       - "${MEDIA_POSTGRES_PORT:-15436}:5432"
@@ -311,7 +311,7 @@ services:
       - ../beebase-media-service/migrations:/migrations:ro
     entrypoint: ["sh", "-c"]
     command:
-      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@media-postgres:5432/${MEDIA_DB_NAME:-beebase_media_dev}?sslmode=disable" up'
+      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_MEDIA_PASSWORD:?set POSTGRES_MEDIA_PASSWORD}@media-postgres:5432/${MEDIA_DB_NAME:-beebase_media_dev}?sslmode=disable" up'
 
   media-service:
     build:
@@ -321,7 +321,7 @@ services:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-debug}
       HTTP_PORT: "8080"
-      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_PASSWORD:-beebase}@media-postgres:5432/${MEDIA_DB_NAME:-beebase_media_dev}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_MEDIA_PASSWORD:?set POSTGRES_MEDIA_PASSWORD}@media-postgres:5432/${MEDIA_DB_NAME:-beebase_media_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}

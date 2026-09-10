@@ -92,7 +92,6 @@ services:
       - ../beebase-auth-service/.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       # DATABASE_URL itself is not set here: it comes from auth-service's
       # own .env (env_file above), which builds it from POSTGRES_USER/
@@ -183,7 +182,6 @@ services:
       - ../beebase-apiary-service/.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       # DATABASE_URL itself is not set here: it comes from apiary-service's
       # own .env (env_file above), which builds it from POSTGRES_USER/
@@ -274,7 +272,6 @@ services:
       - ../beebase-hive-service/.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       # DATABASE_URL itself is not set here: it comes from hive-service's
       # own .env (env_file above), which builds it from POSTGRES_USER/
@@ -367,7 +364,6 @@ services:
       - ../beebase-inspection-service/.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       # DATABASE_URL itself is not set here: it comes from
       # inspection-service's own .env (env_file above), which builds it
@@ -458,7 +454,6 @@ services:
       - ../beebase-media-service/.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       # DATABASE_URL itself is not set here: it comes from media-service's
       # own .env (env_file above), which builds it from POSTGRES_USER/
@@ -502,7 +497,6 @@ services:
       - ../beebase-statistics-service/.env
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
@@ -534,7 +528,6 @@ services:
     restart: unless-stopped
     environment:
       APP_ENV: production
-      LOG_LEVEL: info
       HTTP_PORT: "8080"
       AUTH_SERVICE_URL: http://auth-service:8080
       APIARY_SERVICE_URL: http://apiary-service:8080
