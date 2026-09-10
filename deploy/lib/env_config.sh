@@ -47,8 +47,9 @@ declare -gA ENV_TEMPLATE_NAME=(
 )
 
 # Keys an operator must set directly in that service's own .env before
-# deploy.sh will deploy - every one of these is, by definition, also a
-# secret (see env_config_is_secret_key) and must never be logged.
+# deploy.sh will deploy. Values must never be logged: some are secrets,
+# and the rest are validated through the same redacted path so production
+# configuration stays quiet and uniform.
 # gateway and statistics-service currently need none: every variable
 # they read is either optional or supplied by docker-compose.prod.yml's
 # `environment:` block (network topology owned by compose - see
@@ -62,7 +63,7 @@ declare -gA ENV_REQUIRED_KEYS=(
   [inspection]="POSTGRES_INSPECTION_PASSWORD"
   [media]="POSTGRES_MEDIA_PASSWORD STORAGE_BUCKET"
   [statistics]=""
-  [subscription]="POSTGRES_SUBSCRIPTION_PASSWORD"
+  [subscription]="POSTGRES_SUBSCRIPTION_PASSWORD AUTH_JWKS_URL REDIS_ADDR APPLE_BUNDLE_ID APPLE_KEY_ID APPLE_ISSUER_ID APPLE_PRIVATE_KEY APPLE_ENVIRONMENT GOOGLE_PACKAGE_NAME GOOGLE_SERVICE_ACCOUNT_JSON"
 )
 
 # Services whose POSTGRES_PASSWORD deploy.sh must also mirror - by key
@@ -147,7 +148,7 @@ env_config_missing_required() {
 
 # env_config_is_secret_key <service> <key>
 # True (rc 0) if <key> is one of <service>'s required keys - used to
-# keep a secret's value out of anything ever logged or copied around.
+# keep required production values out of anything ever logged or copied around.
 env_config_is_secret_key() {
   local service="$1" key="$2" candidate
 

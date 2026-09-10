@@ -422,6 +422,8 @@ services:
       HTTP_PORT: "8080"
       GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_SUBSCRIPTION_PASSWORD:?set POSTGRES_SUBSCRIPTION_PASSWORD}@postgres-subscription:5432/beebase_subscription?sslmode=disable
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
     networks: [beebase]
     depends_on:
       postgres-subscription: { condition: service_healthy }

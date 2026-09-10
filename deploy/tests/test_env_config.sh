@@ -49,7 +49,18 @@ POSTGRES_MEDIA_PASSWORD=media-pw
 STORAGE_BUCKET=beebase-prod
 EOF
   : >"${dir}/statistics.env"
-  echo "POSTGRES_SUBSCRIPTION_PASSWORD=subscription-pw" >"${dir}/subscription.env"
+  cat >"${dir}/subscription.env" <<'EOF'
+POSTGRES_SUBSCRIPTION_PASSWORD=subscription-pw
+AUTH_JWKS_URL=http://auth-service:8080/.well-known/jwks.json
+REDIS_ADDR=redis:6379
+APPLE_BUNDLE_ID=com.beebase.production
+APPLE_KEY_ID=apple-key-id
+APPLE_ISSUER_ID=apple-issuer-id
+APPLE_PRIVATE_KEY=apple-private-key
+APPLE_ENVIRONMENT=Production
+GOOGLE_PACKAGE_NAME=com.beebase.production
+GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account"}
+EOF
 
   chmod 600 "${dir}"/*.env
 }
@@ -94,8 +105,8 @@ check "gateway requires no production secret" \
   $([ -z "${ENV_REQUIRED_KEYS[gateway]}" ] && echo 1 || echo 0)
 check "statistics requires no production secret" \
   $([ -z "${ENV_REQUIRED_KEYS[statistics]}" ] && echo 1 || echo 0)
-check "subscription requires only POSTGRES_SUBSCRIPTION_PASSWORD" \
-  $([ "${ENV_REQUIRED_KEYS[subscription]}" = "POSTGRES_SUBSCRIPTION_PASSWORD" ] && echo 1 || echo 0)
+check "subscription requires database, auth, redis, Apple and Google production config" \
+  $([ "${ENV_REQUIRED_KEYS[subscription]}" = "POSTGRES_SUBSCRIPTION_PASSWORD AUTH_JWKS_URL REDIS_ADDR APPLE_BUNDLE_ID APPLE_KEY_ID APPLE_ISSUER_ID APPLE_PRIVATE_KEY APPLE_ENVIRONMENT GOOGLE_PACKAGE_NAME GOOGLE_SERVICE_ACCOUNT_JSON" ] && echo 1 || echo 0)
 
 # --- 3. a complete, correctly-permissioned config directory validates
 #     cleanly, service by service and all at once ---
