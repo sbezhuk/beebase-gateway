@@ -101,8 +101,8 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 		{"profile get", http.MethodGet, "/api/v1/profile", "auth"},
 		{"profile update", http.MethodPut, "/api/v1/profile", "auth"},
 		{"profile delete", http.MethodDelete, "/api/v1/profile", "auth"},
-		{"subscription test", http.MethodGet, "/test", "subscription"},
-		{"subscription api test", http.MethodGet, "/api/v1/subscription/test", "subscription"},
+		{"subscription get", http.MethodGet, "/api/v1/subscription", "subscription"},
+		{"subscription webhook", http.MethodPost, "/api/v1/subscriptions/webhooks/apple", "subscription"},
 	}
 
 	for _, tc := range cases {

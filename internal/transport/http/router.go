@@ -124,7 +124,6 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	r.Mount("/api/v1/statistics", up.Statistics)
 	r.Mount("/api/v1/subscription", up.Subscription)
 	r.Mount("/api/v1/subscriptions", up.Subscription)
-	r.Mount("/test", up.Subscription)
 
 	return r
 }

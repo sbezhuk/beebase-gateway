@@ -44,12 +44,23 @@ POSTGRES_MEDIA_PASSWORD=fake-media-pw
 STORAGE_BUCKET=fake-bucket
 EOF
   : >"${dir}/statistics.env"
-  echo "POSTGRES_SUBSCRIPTION_PASSWORD=fake-subscription-pw" >"${dir}/subscription.env"
+  cat >"${dir}/subscription.env" <<'EOF'
+POSTGRES_SUBSCRIPTION_PASSWORD=fake-subscription-pw
+AUTH_JWKS_URL=http://auth-service:8080/.well-known/jwks.json
+REDIS_ADDR=redis:6379
+APPLE_BUNDLE_ID=com.beebase.production
+APPLE_KEY_ID=fake-apple-key-id
+APPLE_ISSUER_ID=fake-apple-issuer-id
+APPLE_PRIVATE_KEY=fake-apple-private-key
+APPLE_ENVIRONMENT=Production
+GOOGLE_PACKAGE_NAME=com.beebase.production
+GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account"}
+EOF
 
   chmod 600 "${dir}"/*.env
 }
 
-ALL_FAKE_SECRETS="fake-auth-pw|fake-apiary-pw|fake-hive-pw|fake-inspection-pw|fake-media-pw|fake-subscription-pw|fake-totp-key|fake-jwt-key"
+ALL_FAKE_SECRETS="fake-auth-pw|fake-apiary-pw|fake-hive-pw|fake-inspection-pw|fake-media-pw|fake-subscription-pw|fake-totp-key|fake-jwt-key|fake-apple-key-id|fake-apple-issuer-id|fake-apple-private-key"
 
 # run_deploy <manifest-file> - invokes deploy.sh with a fresh, isolated
 # /opt/beebase-style layout under a temp dir and mocked aws/docker/curl
@@ -375,7 +386,7 @@ rm -rf "${BAD_MODE_ROOT}"
 
 run_deploy "${VALID_FILE}"
 if [ "${RC}" -eq 0 ] &&
-  grep -qxF "POSTGRES_PASSWORD=fake-auth-pw" "${DEPLOY_ROOT}/config/auth.env" &&
+  grep -qxF "POSTGRES_AUTH_PASSWORD=fake-auth-pw" "${DEPLOY_ROOT}/config/auth.env" &&
   grep -qxF "JWT_PRIVATE_KEY=fake-jwt-key" "${DEPLOY_ROOT}/config/auth.env" &&
   grep -qxF "TOTP_ENCRYPTION_KEY=fake-totp-key" "${DEPLOY_ROOT}/config/auth.env" &&
   grep -qxF "STORAGE_BUCKET=fake-bucket" "${DEPLOY_ROOT}/config/media.env"

@@ -153,12 +153,12 @@ fi
 #     pass. Never prints a value, only key names - see
 #     deploy/lib/env_config.sh. ---
 
-log "validating each of the 7 services' production .env files in ${CONFIG_DIR}"
+log "validating each of the 8 services' production .env files in ${CONFIG_DIR}"
 
 env_config_validate_all "${CONFIG_DIR}" \
   || fail "one or more service .env files in ${CONFIG_DIR} failed validation (see above) - provision/fix them before deploying; deploy.sh never creates or completes these files itself"
 
-log "all 7 service .env files present, mode 0600, and complete"
+log "all 8 service .env files present, mode 0600, and complete"
 
 # --- Derive account/region-specific values from the instance itself ---
 #
@@ -534,14 +534,6 @@ echo "${JWKS}" |
   jq -e '.keys | length > 0' \
   >/dev/null \
   || fail "smoke test failed: jwks.json via gateway did not return a signing key"
-
-log "smoke test: GET /test via gateway"
-
-${COMPOSE} exec -T gateway \
-  wget -qO- http://localhost:8080/test |
-  grep -q '"status":"ok"' \
-  || fail "smoke test failed: gateway /test did not return ok"
-
 # --- Snapshot this release's exact configuration for future rollbacks ---
 #
 # Reached only after every health check and smoke test passed, so a
