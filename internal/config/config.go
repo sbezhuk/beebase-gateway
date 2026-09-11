@@ -23,13 +23,14 @@ type Config struct {
 	// Upstream base URLs, e.g. "http://auth-service:8080". Requests are
 	// forwarded with their path and query untouched, so each upstream
 	// keeps routing exactly as it does when called directly.
-	AuthServiceURL       string
-	ApiaryServiceURL     string
-	HiveServiceURL       string
-	InspectionServiceURL string
-	MediaServiceURL         string
-	StatisticsServiceURL    string
-	SubscriptionServiceURL  string
+	AuthServiceURL         string
+	ApiaryServiceURL       string
+	HiveServiceURL         string
+	InspectionServiceURL   string
+	HarvestServiceURL      string
+	MediaServiceURL        string
+	StatisticsServiceURL   string
+	SubscriptionServiceURL string
 }
 
 // Load builds a Config from environment variables, falling back to
@@ -50,6 +51,7 @@ func Load() (*Config, error) {
 		ApiaryServiceURL:       getEnv("APIARY_SERVICE_URL", ""),
 		HiveServiceURL:         getEnv("HIVE_SERVICE_URL", ""),
 		InspectionServiceURL:   getEnv("INSPECTION_SERVICE_URL", ""),
+		HarvestServiceURL:      getEnv("HARVEST_SERVICE_URL", ""),
 		MediaServiceURL:        getEnv("MEDIA_SERVICE_URL", ""),
 		StatisticsServiceURL:   getEnv("STATISTICS_SERVICE_URL", ""),
 		SubscriptionServiceURL: getEnv("SUBSCRIPTION_SERVICE_URL", ""),
@@ -60,6 +62,7 @@ func Load() (*Config, error) {
 		{"APIARY_SERVICE_URL", cfg.ApiaryServiceURL},
 		{"HIVE_SERVICE_URL", cfg.HiveServiceURL},
 		{"INSPECTION_SERVICE_URL", cfg.InspectionServiceURL},
+		{"HARVEST_SERVICE_URL", cfg.HarvestServiceURL},
 		{"MEDIA_SERVICE_URL", cfg.MediaServiceURL},
 		{"STATISTICS_SERVICE_URL", cfg.StatisticsServiceURL},
 		{"SUBSCRIPTION_SERVICE_URL", cfg.SubscriptionServiceURL},

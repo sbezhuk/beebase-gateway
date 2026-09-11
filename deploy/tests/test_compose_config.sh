@@ -1,6 +1,6 @@
 #!/bin/bash
 # `docker compose config` must succeed once every per-service image-tag
-# variable is set and every one of the 7 services' env files exists
+# variable is set and every one of the 9 services' env files exists
 # under BEEBASE_CONFIG_DIR - each service must resolve to its OWN image
 # tag (the thing the old single shared IMAGE_TAG couldn't do) and load
 # its OWN env file, and only its own. Also checks that compose still
@@ -41,6 +41,7 @@ EOF
 printf 'POSTGRES_PASSWORD=apiary-pw\nMARKER=apiary-marker\n' >"${CONFIG_DIR}/apiary.env"
 printf 'POSTGRES_PASSWORD=hive-pw\nMARKER=hive-marker\n' >"${CONFIG_DIR}/hive.env"
 printf 'POSTGRES_PASSWORD=inspection-pw\nMARKER=inspection-marker\n' >"${CONFIG_DIR}/inspection.env"
+printf 'POSTGRES_PASSWORD=harvest-pw\nMARKER=harvest-marker\n' >"${CONFIG_DIR}/harvest.env"
 cat >"${CONFIG_DIR}/media.env" <<'EOF'
 POSTGRES_PASSWORD=media-pw
 STORAGE_BUCKET=beebase-prod
@@ -60,6 +61,7 @@ FAKE_ENV=(
   APIARY_IMAGE_TAG=436efffcc436efffcc436efffcc436efffcc436
   HIVE_IMAGE_TAG=f9e257addf9e257addf9e257addf9e257addf9e
   INSPECTION_IMAGE_TAG=8844c5bee8844c5bee8844c5bee8844c5bee8844
+  HARVEST_IMAGE_TAG=c2b91af00c2b91af00c2b91af00c2b91af00c2b9
   MEDIA_IMAGE_TAG=a5b903bffa5b903bffa5b903bffa5b903bffa5b9
   STATISTICS_IMAGE_TAG=a0877a011a0877a011a0877a011a0877a011a08
   SUBSCRIPTION_IMAGE_TAG=b85447100b85447100b85447100b85447100b854
@@ -71,6 +73,7 @@ FAKE_ENV=(
   POSTGRES_APIARY_PASSWORD=apiary-pw
   POSTGRES_HIVE_PASSWORD=hive-pw
   POSTGRES_INSPECTION_PASSWORD=inspection-pw
+  POSTGRES_HARVEST_PASSWORD=harvest-pw
   POSTGRES_MEDIA_PASSWORD=media-pw
   POSTGRES_SUBSCRIPTION_PASSWORD=subscription-pw
 )
@@ -96,6 +99,7 @@ declare -A expect=(
   [beebase-apiary-service]=436efffcc436efffcc436efffcc436efffcc436
   [beebase-hive-service]=f9e257addf9e257addf9e257addf9e257addf9e
   [beebase-inspection-service]=8844c5bee8844c5bee8844c5bee8844c5bee8844
+  [beebase-harvest-service]=c2b91af00c2b91af00c2b91af00c2b91af00c2b9
   [beebase-media-service]=a5b903bffa5b903bffa5b903bffa5b903bffa5b9
   [beebase-statistics-service]=a0877a011a0877a011a0877a011a0877a011a08
   [beebase-subscription-service]=b85447100b85447100b85447100b85447100b854
@@ -120,6 +124,7 @@ declare -A expect_migrate=(
   [beebase-apiary-service]=436efffcc436efffcc436efffcc436efffcc436
   [beebase-hive-service]=f9e257addf9e257addf9e257addf9e257addf9e
   [beebase-inspection-service]=8844c5bee8844c5bee8844c5bee8844c5bee8844
+  [beebase-harvest-service]=c2b91af00c2b91af00c2b91af00c2b91af00c2b9
   [beebase-media-service]=a5b903bffa5b903bffa5b903bffa5b903bffa5b9
   [beebase-subscription-service]=b85447100b85447100b85447100b85447100b854
 )
@@ -159,6 +164,7 @@ declare -A expect_marker=(
   [apiary-service]=apiary-marker
   [hive-service]=hive-marker
   [inspection-service]=inspection-marker
+  [harvest-service]=harvest-marker
   [media-service]=media-marker
   [statistics-service]=statistics-marker
   [subscription-service]=subscription-marker
@@ -183,7 +189,7 @@ done
 
 # infra services (postgres-*, migrate-*, redis, edge) must never see any
 # service's MARKER - they don't use env_file: at all, by design.
-for svc in postgres-auth postgres-apiary postgres-hive postgres-inspection postgres-media postgres-subscription migrate-auth migrate-apiary migrate-hive migrate-inspection migrate-media migrate-subscription redis edge; do
+for svc in postgres-auth postgres-apiary postgres-hive postgres-inspection postgres-harvest postgres-media postgres-subscription migrate-auth migrate-apiary migrate-hive migrate-inspection migrate-harvest migrate-media migrate-subscription redis edge; do
   got=$(echo "${RESOLVED_JSON}" | jq -r --arg svc "${svc}" '.services[$svc].environment.MARKER // "none"' 2>/dev/null)
   if [ "${got}" = "none" ]; then
     echo "PASS: ${svc} does not load any service's env file"

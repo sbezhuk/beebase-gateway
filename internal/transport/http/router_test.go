@@ -20,11 +20,12 @@ func (s *stubUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func newTestRouter() (http.Handler, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream) {
+func newTestRouter() (http.Handler, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream, *stubUpstream) {
 	auth := &stubUpstream{}
 	apiary := &stubUpstream{}
 	media := &stubUpstream{}
 	hive := &stubUpstream{}
+	harvest := &stubUpstream{}
 	statistics := &stubUpstream{}
 	subscription := &stubUpstream{}
 	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), Upstreams{
@@ -32,11 +33,12 @@ func newTestRouter() (http.Handler, *stubUpstream, *stubUpstream, *stubUpstream,
 		Apiary:       apiary,
 		Hive:         hive,
 		Inspection:   &stubUpstream{},
+		Harvest:      harvest,
 		Media:        media,
 		Statistics:   statistics,
 		Subscription: subscription,
 	})
-	return r, auth, apiary, media, hive, statistics, subscription
+	return r, auth, apiary, media, hive, harvest, statistics, subscription
 }
 
 // TestInternalOnlyRoutesAreBlocked locks in the fix: an external client
@@ -59,7 +61,7 @@ func TestInternalOnlyRoutesAreBlocked(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			router, _, apiary, media, hive, _, _ := newTestRouter()
+			router, _, apiary, media, hive, _, _, _ := newTestRouter()
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()
@@ -94,6 +96,11 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 		{"hive list", http.MethodGet, "/api/v1/hives", "hive"},
 		{"hive list by apiary", http.MethodGet, "/api/v1/apiaries/11111111-1111-1111-1111-111111111111/hives", "hive"},
 		{"hive update", http.MethodPut, "/api/v1/hives/11111111-1111-1111-1111-111111111111", "hive"},
+		{"harvest create", http.MethodPost, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest", "harvest"},
+		{"harvest list", http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest", "harvest"},
+		{"harvest get", http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest/22222222-2222-2222-2222-222222222222", "harvest"},
+		{"harvest update", http.MethodPut, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest/22222222-2222-2222-2222-222222222222", "harvest"},
+		{"harvest delete", http.MethodDelete, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest/22222222-2222-2222-2222-222222222222", "harvest"},
 		{"apiary create", http.MethodPost, "/api/v1/apiaries", "apiary"},
 		{"apiary list", http.MethodGet, "/api/v1/apiaries", "apiary"},
 		{"apiary delete by id", http.MethodDelete, "/api/v1/apiaries/11111111-1111-1111-1111-111111111111", "apiary"},
@@ -107,7 +114,7 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			router, auth, apiary, media, hive, statistics, subscription := newTestRouter()
+			router, auth, apiary, media, hive, harvest, statistics, subscription := newTestRouter()
 
 			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()
@@ -134,6 +141,10 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 				if !hive.called {
 					t.Error("expected the request to reach hive-service")
 				}
+			case "harvest":
+				if !harvest.called {
+					t.Error("expected the request to reach harvest-service")
+				}
 			case "statistics":
 				if !statistics.called {
 					t.Error("expected the request to reach statistics-service")
@@ -144,5 +155,28 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestHarvestRoutesDoNotReachHiveService locks in the routing precedence
+// harvest depends on: /api/v1/hives/{hiveID}/harvest must never fall
+// through to hive-service's own broader /api/v1/hives mount, since that
+// would return hive-service's 404 for a resource it knows nothing about
+// rather than routing to harvest-service.
+func TestHarvestRoutesDoNotReachHiveService(t *testing.T) {
+	router, _, _, _, hive, harvest, _, _ := newTestRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if hive.called {
+		t.Error("harvest route reached hive-service; it must be routed to harvest-service instead")
+	}
+	if !harvest.called {
+		t.Error("harvest route did not reach harvest-service")
 	}
 }

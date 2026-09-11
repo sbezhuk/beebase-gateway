@@ -1,6 +1,6 @@
 name: Production Release
 
-# Combines the 7 independently-versioned BeeBase services into one
+# Combines the 9 independently-versioned BeeBase services into one
 # immutable release manifest and deploys it - see this repo's README.md
 # ("Production deployment") for the full architecture. This workflow
 # never builds or rebuilds anything: it only selects already-pushed,
@@ -29,6 +29,9 @@ on:
         required: false
       inspection_image_tag:
         description: "Inspection-service image tag (Git SHA) - overrides the current production inspection image"
+        required: false
+      harvest_image_tag:
+        description: "Harvest-service image tag (Git SHA) - overrides the current production harvest image"
         required: false
       media_image_tag:
         description: "Media-service image tag (Git SHA) - overrides the current production media image"
@@ -71,7 +74,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       # Fails the whole run fast, before any image/manifest work, if any
-      # of the 7 services' production .env files (auth.env, gateway.env,
+      # of the 9 services' production .env files (auth.env, gateway.env,
       # ...) is missing, wrong-permissioned or incomplete on the host -
       # deploy.sh re-validates this itself regardless (see deploy.sh and
       # deploy/lib/env_config.sh, the single source of truth for what
@@ -128,7 +131,7 @@ jobs:
             exit 1
           fi
 
-          echo "all 7 service .env files present, mode 0600, and complete"
+          echo "all 9 service .env files present, mode 0600, and complete"
 
       - name: Resolve current production manifest
         if: inputs.rollback_release == ''
@@ -197,6 +200,7 @@ jobs:
           APIARY_IMAGE_TAG: ${{ inputs.apiary_image_tag }}
           HIVE_IMAGE_TAG: ${{ inputs.hive_image_tag }}
           INSPECTION_IMAGE_TAG: ${{ inputs.inspection_image_tag }}
+          HARVEST_IMAGE_TAG: ${{ inputs.harvest_image_tag }}
           MEDIA_IMAGE_TAG: ${{ inputs.media_image_tag }}
           STATISTICS_IMAGE_TAG: ${{ inputs.statistics_image_tag }}
           SUBSCRIPTION_IMAGE_TAG: ${{ inputs.subscription_image_tag }}
@@ -234,6 +238,7 @@ jobs:
           APIARY_IMAGE_TAG="${APIARY_IMAGE_TAG:-${MANIFEST[APIARY_IMAGE_TAG]}}"
           HIVE_IMAGE_TAG="${HIVE_IMAGE_TAG:-${MANIFEST[HIVE_IMAGE_TAG]}}"
           INSPECTION_IMAGE_TAG="${INSPECTION_IMAGE_TAG:-${MANIFEST[INSPECTION_IMAGE_TAG]}}"
+          HARVEST_IMAGE_TAG="${HARVEST_IMAGE_TAG:-${MANIFEST[HARVEST_IMAGE_TAG]:-}}"
           MEDIA_IMAGE_TAG="${MEDIA_IMAGE_TAG:-${MANIFEST[MEDIA_IMAGE_TAG]}}"
           STATISTICS_IMAGE_TAG="${STATISTICS_IMAGE_TAG:-${MANIFEST[STATISTICS_IMAGE_TAG]}}"
           SUBSCRIPTION_IMAGE_TAG="${SUBSCRIPTION_IMAGE_TAG:-${MANIFEST[SUBSCRIPTION_IMAGE_TAG]:-}}"

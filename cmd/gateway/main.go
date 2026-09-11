@@ -45,10 +45,11 @@ func run() error {
 	defer stop()
 
 	upstreams := map[string]string{
-		"auth-service":       cfg.AuthServiceURL,
-		"apiary-service":     cfg.ApiaryServiceURL,
-		"hive-service":       cfg.HiveServiceURL,
-		"inspection-service": cfg.InspectionServiceURL,
+		"auth-service":         cfg.AuthServiceURL,
+		"apiary-service":       cfg.ApiaryServiceURL,
+		"hive-service":         cfg.HiveServiceURL,
+		"inspection-service":   cfg.InspectionServiceURL,
+		"harvest-service":      cfg.HarvestServiceURL,
 		"media-service":        cfg.MediaServiceURL,
 		"statistics-service":   cfg.StatisticsServiceURL,
 		"subscription-service": cfg.SubscriptionServiceURL,
@@ -67,6 +68,7 @@ func run() error {
 		Apiary:       proxies["apiary-service"],
 		Hive:         proxies["hive-service"],
 		Inspection:   proxies["inspection-service"],
+		Harvest:      proxies["harvest-service"],
 		Media:        proxies["media-service"],
 		Statistics:   proxies["statistics-service"],
 		Subscription: proxies["subscription-service"],

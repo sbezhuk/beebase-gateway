@@ -1,6 +1,6 @@
 # Per-service production `.env` file names and the variables each one
 # must supply before deploy.sh will touch the running stack. Replaces
-# the old single-file lib/secrets.sh now that every one of the 7
+# the old single-file lib/secrets.sh now that every one of the 9
 # BeeBase services owns its own production `.env` under
 # ${BEEBASE_CONFIG_DIR:-/opt/beebase/config}/ - see
 # docker-compose.prod.yml's header comment and README's "Secrets,
@@ -18,7 +18,7 @@
 # Pure bash, no AWS/Docker calls - unit-tested on its own (see
 # deploy/tests/test_env_config.sh), the same way lib/manifest.sh is.
 
-ENV_SERVICES=(gateway auth apiary hive inspection media statistics subscription)
+ENV_SERVICES=(gateway auth apiary hive inspection harvest media statistics subscription)
 
 # Production env file name for each service, relative to
 # ${BEEBASE_CONFIG_DIR:-/opt/beebase/config}/ - matches
@@ -29,6 +29,7 @@ declare -gA ENV_FILE_NAME=(
   [apiary]=apiary.env
   [hive]=hive.env
   [inspection]=inspection.env
+  [harvest]=harvest.env
   [media]=media.env
   [statistics]=statistics.env
   [subscription]=subscription.env
@@ -41,6 +42,7 @@ declare -gA ENV_TEMPLATE_NAME=(
   [apiary]=apiary.env.example
   [hive]=hive.env.example
   [inspection]=inspection.env.example
+  [harvest]=harvest.env.example
   [media]=media.env.example
   [statistics]=statistics.env.example
   [subscription]=subscription.env.example
@@ -61,6 +63,7 @@ declare -gA ENV_REQUIRED_KEYS=(
   [apiary]="POSTGRES_APIARY_PASSWORD"
   [hive]="POSTGRES_HIVE_PASSWORD"
   [inspection]="POSTGRES_INSPECTION_PASSWORD"
+  [harvest]="POSTGRES_HARVEST_PASSWORD"
   [media]="POSTGRES_MEDIA_PASSWORD STORAGE_BUCKET"
   [statistics]=""
   [subscription]="POSTGRES_SUBSCRIPTION_PASSWORD AUTH_JWKS_URL REDIS_ADDR APPLE_BUNDLE_ID APPLE_KEY_ID APPLE_ISSUER_ID APPLE_PRIVATE_KEY APPLE_ENVIRONMENT GOOGLE_PACKAGE_NAME GOOGLE_SERVICE_ACCOUNT_JSON"
@@ -85,6 +88,7 @@ declare -gA ENV_DB_INTERPOLATION_KEY=(
   [apiary]=POSTGRES_APIARY_PASSWORD
   [hive]=POSTGRES_HIVE_PASSWORD
   [inspection]=POSTGRES_INSPECTION_PASSWORD
+  [harvest]=POSTGRES_HARVEST_PASSWORD
   [media]=POSTGRES_MEDIA_PASSWORD
   [subscription]=POSTGRES_SUBSCRIPTION_PASSWORD
 )

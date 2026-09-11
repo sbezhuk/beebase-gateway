@@ -13,6 +13,7 @@ database, and no state of its own.
 | apiary-service | [beebase-apiary-service](https://github.com/sbezhuk/beebase-apiary-service) | apiaries |
 | hive-service | [beebase-hive-service](https://github.com/sbezhuk/beebase-hive-service) | hives |
 | inspection-service | [beebase-inspection-service](https://github.com/sbezhuk/beebase-inspection-service) | inspections |
+| harvest-service | [beebase-harvest-service](https://github.com/sbezhuk/beebase-harvest-service) | harvest records (honey, pollen, propolis, wax collected from a hive) - an independent domain, not nested under inspection |
 | media-service | [beebase-media-service](https://github.com/sbezhuk/beebase-media-service) | file/media uploads (photos, PDFs, XML, etc.), generically attached to an apiary or a hive |
 | statistics-service | [beebase-statistics-service](https://github.com/sbezhuk/beebase-statistics-service) | Dashboard statistics, computed fresh from the services above on every request — holds no data of its own |
 | gateway (this repo) | `beebase-gateway` | single entry point, routes to the above |
@@ -34,6 +35,7 @@ service already routes its own full path:
 | `/api/v1/profile` | auth-service |
 | `/api/v1/apiaries/*` | apiary-service |
 | `/api/v1/hives/{hiveId}/inspections` | inspection-service (checked before the `/api/v1/hives/*` wildcard below, since it'd otherwise match too) |
+| `/api/v1/hives/{hiveId}/harvest*` | harvest-service (checked before the `/api/v1/hives/*` wildcard below, for the same reason - harvest is an independent domain, it just happens to share this path prefix) |
 | `/api/v1/hives/*` | hive-service |
 | `/api/v1/inspections/*` | inspection-service |
 | `/api/v1/media/*` | media-service |
@@ -61,6 +63,7 @@ git clone https://github.com/sbezhuk/beebase-auth-service.git
 git clone https://github.com/sbezhuk/beebase-apiary-service.git
 git clone https://github.com/sbezhuk/beebase-hive-service.git
 git clone https://github.com/sbezhuk/beebase-inspection-service.git
+git clone https://github.com/sbezhuk/beebase-harvest-service.git
 git clone https://github.com/sbezhuk/beebase-media-service.git
 git clone https://github.com/sbezhuk/beebase-statistics-service.git
 # beebase-gateway is this repo
@@ -104,7 +107,7 @@ never read by the app, Docker Compose, or deployment tooling; copy it
 once to create your real `.env`, which is what actually gets loaded).
 In production, gateway loads its own `/opt/beebase/config/gateway.env`
 (see [deploy/deploy.sh](deploy/deploy.sh) and
-[deploy/lib/env_config.sh](deploy/lib/env_config.sh)) — each of the 7
+[deploy/lib/env_config.sh](deploy/lib/env_config.sh)) — each of the 9
 BeeBase services now owns its own production `.env`, provisioned once
 by an operator from its own template under
 [deploy/env-templates/](deploy/env-templates/); see "Secrets, images,
@@ -124,12 +127,13 @@ as a fallback, in development or in production.
 | `APIARY_SERVICE_URL` | *(required)* | Base URL of apiary-service |
 | `HIVE_SERVICE_URL` | *(required)* | Base URL of hive-service |
 | `INSPECTION_SERVICE_URL` | *(required)* | Base URL of inspection-service |
+| `HARVEST_SERVICE_URL` | *(required)* | Base URL of harvest-service |
 | `MEDIA_SERVICE_URL` | *(required)* | Base URL of media-service |
 | `STATISTICS_SERVICE_URL` | *(required)* | Base URL of statistics-service |
 
 ## Production deployment
 
-BeeBase is **7 independent Git repositories**, each with its own
+BeeBase is **9 independent Git repositories**, each with its own
 GitHub Actions workflow, its own commit history, and its own Git SHA.
 There is no single SHA that describes "the app" — a production release
 is the combination of one specific, independently-chosen image tag per
@@ -153,8 +157,10 @@ beebase-auth-service:0b4d246...
 beebase-apiary-service:436efff...
 beebase-hive-service:f9e257a...
 beebase-inspection-service:8844c5b...
+beebase-harvest-service:c2b91af...
 beebase-media-service:a5b903b...
 beebase-statistics-service:a0877a0...
+beebase-subscription-service:1f3d7ce...
 ```
 
 Each workflow authenticates to AWS via GitHub's OIDC federation
@@ -162,15 +168,16 @@ Each workflow authenticates to AWS via GitHub's OIDC federation
 `beebase-prod-github-actions-ci` IAM role — see Terraform below) and
 builds for `linux/arm64` (EC2 is Graviton) with Buildx + QEMU, exactly
 like the retired Azure Pipelines template did. Services with a database
-(auth/apiary/hive/inspection/media) also push a `Dockerfile.migrate`
-image tagged `<sha>-migrate`.
+(auth/apiary/hive/inspection/harvest/media/subscription) also push a
+`Dockerfile.migrate` image tagged `<sha>-migrate`.
 
 [docker-compose.prod.yml](docker-compose.prod.yml) reflects the
 per-service tagging directly: there is no shared `IMAGE_TAG`, only one
 variable per service (`GATEWAY_IMAGE_TAG`, `AUTH_IMAGE_TAG`,
 `APIARY_IMAGE_TAG`, `HIVE_IMAGE_TAG`, `INSPECTION_IMAGE_TAG`,
-`MEDIA_IMAGE_TAG`, `STATISTICS_IMAGE_TAG`), all required with no
-default. Migration images use the same variable, suffixed `-migrate`
+`HARVEST_IMAGE_TAG`, `MEDIA_IMAGE_TAG`, `STATISTICS_IMAGE_TAG`,
+`SUBSCRIPTION_IMAGE_TAG`), all required with no default. Migration
+images use the same variable, suffixed `-migrate`
 (e.g. `${AUTH_IMAGE_TAG}-migrate`).
 
 ### Deployment bundle (beebase-gateway only)
@@ -193,7 +200,7 @@ the immutable commit SHA, never the tag name, and is never overwritten.
 
 ### Release manifests
 
-A **release manifest** is what combines those 7 independent tags into
+A **release manifest** is what combines those 9 independent tags into
 one deployable unit. It's a plain `KEY=VALUE` env file — the same shape
 `docker compose --env-file` already expects, and the same shape
 `deploy.sh` already writes production config in — parsed and validated
@@ -208,8 +215,10 @@ AUTH_IMAGE_TAG=0b4d246...
 APIARY_IMAGE_TAG=436efff...
 HIVE_IMAGE_TAG=f9e257a...
 INSPECTION_IMAGE_TAG=8844c5b...
+HARVEST_IMAGE_TAG=c2b91af...
 MEDIA_IMAGE_TAG=a5b903b...
 STATISTICS_IMAGE_TAG=a0877a0...
+SUBSCRIPTION_IMAGE_TAG=1f3d7ce...
 ```
 
 `RELEASE` is an identifier for *this combination of versions* — a date
@@ -233,7 +242,7 @@ which is what makes rollback possible (see below).
 is a separate, manual (`workflow_dispatch`-only) GitHub Actions workflow
 in this repo — distinct from this repo's own `ci.yml` — that:
 
-1. Takes the exact image tag for all 7 services as explicit inputs
+1. Takes the exact image tag for all 9 services as explicit inputs
    (`gateway_image_tag`, `auth_image_tag`, ...) — **never** assumes any
    two repositories share a SHA, and never auto-selects `latest`.
 2. Builds and validates a new, immutable release manifest from those
@@ -243,7 +252,7 @@ in this repo — distinct from this repo's own `ci.yml` — that:
 3. Verifies every one of those images — and every migrate image —
    actually exists in ECR, and fails the run before anything is sent to
    EC2 if any one of them is missing.
-4. Validates, on the host itself over SSM, that every one of the 7
+4. Validates, on the host itself over SSM, that every one of the 9
    services' own production `.env` files exists, is mode `0600` and has
    every required key set — reusing `deploy/lib/env_config.sh`'s own
    `env_config_validate_all` rather than reimplementing that check —
@@ -260,12 +269,12 @@ in this repo — distinct from this repo's own `ci.yml` — that:
    Azure Pipelines Deploy stage used to run individually.
 
 ```text
-Individual service workflows (7x, each its own repo)
+Individual service workflows (9x, each its own repo)
   Test → Build → push image tagged with its own SHA
         │
         ▼
 Production release workflow (workflow_dispatch, operator supplies
-all 7 SHAs explicitly)
+all 9 SHAs explicitly)
   build + validate release manifest (deploy/lib/manifest.sh)
   → verify every image + migrate image exists in ECR
   → production Environment approval
@@ -281,7 +290,7 @@ deploy.sh <manifest>
 
 Each service's own workflow only ever builds and pushes — it never
 deploys. Only the production release workflow ever calls `deploy.sh`,
-and only with a full 7-service manifest. `deploy.sh` itself is
+and only with a full 9-service manifest. `deploy.sh` itself is
 unchanged and unduplicated: the workflow orchestrates *when* it runs,
 never *what* it does.
 
@@ -303,7 +312,7 @@ It validates the manifest (every service tag present, shaped like a
 real Git SHA, never `latest`); if this exact release was deployed
 successfully before (i.e. this is a rollback/redeploy), restores that
 release's own snapshotted per-service configuration first (see
-Rollback below); validates every one of the 7 services' own production
+Rollback below); validates every one of the 9 services' own production
 `.env` files — present, mode `0600`, every required key set — before
 touching anything running (failing clearly, by file and key name, if
 any is missing or incomplete — see "Secrets, images, 'no latest'"
@@ -316,7 +325,7 @@ touching anything running**; pulls; starts the data layer; runs each
 service's own migration image; recreates the application stack (every
 application container now loads its own `env_file:`); waits for every
 health check; runs the gateway smoke tests; and — only once all of that
-has passed — snapshots the 7 service `.env` files it just deployed with
+has passed — snapshots the 9 service `.env` files it just deployed with
 (for any future rollback to this release) and updates
 `/opt/beebase/releases/current` to point at the manifest it just
 deployed. Any failure at any step aborts the deploy without touching
@@ -336,7 +345,7 @@ Since every past manifest stays on disk and every image is immutable in
 ECR (`image_tag_mutability = "IMMUTABLE"`, enforced in Terraform), this
 redeploys the exact bytes that ran in that release — not a rebuild, not
 an approximation. Configuration moves with it: the first time a release
-deploys successfully, `deploy.sh` snapshots the 7 service `.env` files
+deploys successfully, `deploy.sh` snapshots the 9 service `.env` files
 it ran with into `/opt/beebase/releases/<release>/config-snapshot/`;
 redeploying that same release restores that exact snapshot into
 `/opt/beebase/config/` before doing anything else, discarding any
@@ -349,24 +358,24 @@ is live.
 
 ### Secrets, images, "no latest"
 
-- Each of the 7 BeeBase services owns its own production `.env` at
+- Each of the 9 BeeBase services owns its own production `.env` at
   `/opt/beebase/config/<service>.env` (`gateway.env`, `auth.env`,
-  `apiary.env`, `hive.env`, `inspection.env`, `media.env`,
-  `statistics.env` — see `deploy/lib/env_config.sh` for the exact file
-  names and required-key lists per service). An operator provisions each
-  one once, by hand, from its own template under `deploy/env-templates/`
-  (e.g. `cp deploy/env-templates/auth.env.example
+  `apiary.env`, `hive.env`, `inspection.env`, `harvest.env`, `media.env`,
+  `statistics.env`, `subscription.env` — see `deploy/lib/env_config.sh`
+  for the exact file names and required-key lists per service). An
+  operator provisions each one once, by hand, from its own template
+  under `deploy/env-templates/` (e.g. `cp deploy/env-templates/auth.env.example
   /opt/beebase/config/auth.env && chmod 600 ...` then filling in real
   values) — never from Git, GitHub Actions, release manifests, or Docker
-  images. `deploy.sh` requires every one of the 7 files to already exist,
+  images. `deploy.sh` requires every one of the 9 files to already exist,
   be mode `0600`, and have every required key present and non-empty
   before it will deploy, and never logs a value from any of them — only
   key and file names. Each service loads only its own file, via
   `env_file:` in `docker-compose.prod.yml`; a service never sees another
   service's secrets. Ownership follows the bounded context: auth-service
   owns `JWT_PRIVATE_KEY` and `TOTP_ENCRYPTION_KEY`; each of
-  auth/apiary/hive/inspection/media owns its own `POSTGRES_PASSWORD`;
-  media-service owns `STORAGE_BUCKET`.
+  auth/apiary/hive/inspection/harvest/media/subscription owns its own
+  `POSTGRES_PASSWORD`; media-service owns `STORAGE_BUCKET`.
 - Compose's own `${VAR}` interpolation (used by every `postgres-*`
   container's `POSTGRES_PASSWORD` and every `migrate-*` job's
   `-database=...` argument) can only read from the single file passed
@@ -377,7 +386,7 @@ is live.
   `RELEASE`, every `*_IMAGE_TAG`, `PUBLIC_DOMAIN`) plus a same-deploy
   copy of each `POSTGRES_*_PASSWORD`, read from that service's own
   `.env` and never logged. `deploy.env` is what `docker compose
-  --env-file` actually reads; it's regenerated from the 7 authoritative
+  --env-file` actually reads; it's regenerated from the 9 authoritative
   per-service files on every deploy and is never operator-edited, so
   it's a derived cache, not a second source of truth. See
   `docker-compose.prod.yml`'s header comment for the full explanation.
@@ -394,7 +403,7 @@ is live.
   to `/beebase/prod/*` either way — see the IAM policies in
   `terraform/modules/github-oidc`.
 - Images come from ECR, one repository per service. CI pushes with the
-  `beebase-prod-github-actions-ci` role (push-only, scoped to the 7
+  `beebase-prod-github-actions-ci` role (push-only, scoped to the 9
   BeeBase ECR repositories); the production host pulls with its own EC2
   IAM role, unrelated to either GitHub Actions role, no static AWS
   credentials anywhere.
@@ -445,10 +454,10 @@ checks structurally: `actionlint .github/workflows/*.yml`.
   `token.actions.githubusercontent.com` (thumbprint fetched live via the
   `tls` provider, not hardcoded).
 - **`<name_prefix>-github-actions-ci`** — assumable only by a workflow
-  run from a pushed `v*` tag in one of the 7 service repos
+  run from a pushed `v*` tag in one of the 9 service repos
   (`repo:<org>/<repo>:ref:refs/tags/v*`, matched with `StringLike` since
   the tag name itself varies per release). Permissions: ECR authenticate
-  + push, scoped to the 7 BeeBase ECR repository ARNs, plus (gateway's
+  + push, scoped to the 9 BeeBase ECR repository ARNs, plus (gateway's
   workflow only, by prefix) `s3:PutObject` under `deploy-bundles/*` in
   the media bucket for the deployment bundle below. Nothing else — in
   particular, no `/beebase/prod` SSM access.
@@ -456,7 +465,7 @@ checks structurally: `actionlint .github/workflows/*.yml`.
   workflow run in `beebase-gateway` under the `production` GitHub
   Environment (`repo:<org>/beebase-gateway:environment:production`).
   Permissions: `ecr:DescribeImages`/`DescribeRepositories` (read-only,
-  scoped to the 7 repo ARNs), `ssm:SendCommand` (scoped to the one
+  scoped to the 9 repo ARNs), `ssm:SendCommand` (scoped to the one
   production EC2 instance + the `AWS-RunShellScript` document),
   `ssm:GetCommandInvocation` (SSM supports no resource-level scoping for
   this action — this is the narrowest it can be), and
@@ -474,11 +483,11 @@ repositories, no EC2/SSM/S3 redesign.
   the OIDC provider and the two IAM roles, then read
   `github_actions_ci_role_arn` and `github_actions_release_role_arn`
   from its outputs.
-- In **each of the 7 service repos**, add a repository variable (not a
+- In **each of the 9 service repos**, add a repository variable (not a
   secret — a role ARN isn't sensitive) `AWS_CI_ROLE_ARN` set to
   `github_actions_ci_role_arn`. (If these ever move under a GitHub
   *organization* rather than a personal account, this can become one
-  org-level variable instead of 7 repo-level copies.)
+  org-level variable instead of 9 repo-level copies.)
 - In **beebase-gateway only**, add two more repository variables:
   `AWS_RELEASE_ROLE_ARN` (`github_actions_release_role_arn`) and
   `EC2_INSTANCE_ID` (also not secrets).
@@ -508,12 +517,12 @@ repositories, no EC2/SSM/S3 redesign.
   When updating them, copy `deploy/lib/manifest.sh` and
   `deploy/lib/env_config.sh` alongside `deploy/deploy.sh` — deploy.sh
   sources both by relative path.
-- Each of the 7 services' production `.env` files must be provisioned
+- Each of the 9 services' production `.env` files must be provisioned
   **once**, by hand, before the first deploy of that service:
   `cp deploy/env-templates/auth.env.example /opt/beebase/config/auth.env`
   (repeat per service), `chmod 600` each, then fill in real values for
   the keys each template lists. `deploy.sh` refuses to deploy — with a
-  clear error naming the file and key, nothing printed — if any of the 7
+  clear error naming the file and key, nothing printed — if any of the 9
   files or any of their required keys is missing; it never creates or
   completes any of them itself. The old, single, shared
   `/opt/beebase/config/.env` this replaces is left in place, untouched
@@ -542,12 +551,12 @@ internal/
   transport/http/           chi router: health/ready + proxy mounts
 .github/workflows/
   ci.yml                     this repo's own Test → Build → push (gateway image)
-  production-release.yml     resolves all 7 services' SHAs into a manifest, deploys it
+  production-release.yml     resolves all 9 services' SHAs into a manifest, deploys it
 deploy/
   deploy.sh                  deploys one release manifest to the production stack
   lib/manifest.sh             manifest parsing/validation (shared by deploy.sh and its tests)
   lib/env_config.sh            per-service .env file names, required keys, validation
-  env-templates/                per-service production .env templates (7 files)
+  env-templates/                per-service production .env templates (9 files)
   .env.example                  deprecated pointer to env-templates/ (see the file itself)
   tests/                      deploy-tooling + workflow tests — see `make deploy-test`
   Caddyfile, backup-postgres.sh, healthcheck-containers.sh, systemd/

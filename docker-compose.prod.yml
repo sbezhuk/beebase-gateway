@@ -8,33 +8,35 @@
 # built-in password, by design:
 #   - ECR_REGISTRY: required, no default (see the ${VAR:?...} guards
 #     below).
-#   - Each of the 7 services is an independent Git repository with its
+#   - Each of the 9 services is an independent Git repository with its
 #     own pipeline and its own commit SHA, so there is deliberately no
 #     single shared IMAGE_TAG - each service has its own
 #     <SERVICE>_IMAGE_TAG variable (GATEWAY_IMAGE_TAG, AUTH_IMAGE_TAG,
 #     APIARY_IMAGE_TAG, HIVE_IMAGE_TAG, INSPECTION_IMAGE_TAG,
-#     MEDIA_IMAGE_TAG, STATISTICS_IMAGE_TAG), all required, none
-#     defaulted. Together, one value per variable, they form a release
-#     manifest - see deploy/lib/manifest.sh and deploy/deploy.sh, which
-#     is the only thing that ever sets them. RELEASE is the manifest's
-#     own identifier (e.g. 2026.09.07-1), used only for log-stream
-#     naming on services that have no image tag of their own (edge,
-#     postgres, redis) - it never substitutes for an image tag.
+#     HARVEST_IMAGE_TAG, MEDIA_IMAGE_TAG, STATISTICS_IMAGE_TAG,
+#     SUBSCRIPTION_IMAGE_TAG), all required, none defaulted. Together,
+#     one value per variable, they form a release manifest - see
+#     deploy/lib/manifest.sh and deploy/deploy.sh, which is the only
+#     thing that ever sets them. RELEASE is the manifest's own
+#     identifier (e.g. 2026.09.07-1), used only for log-stream naming on
+#     services that have no image tag of their own (edge, postgres,
+#     redis) - it never substitutes for an image tag.
 #
-#   - Each of the 7 application services owns its own production .env at
+#   - Each of the 9 application services owns its own production .env at
 #     ${BEEBASE_CONFIG_DIR:-../config}/<service>.env (gateway.env,
-#     auth.env, apiary.env, hive.env, inspection.env, media.env,
-#     statistics.env - see deploy/lib/env_config.sh for the exact
-#     mapping and required-key lists, and deploy/env-templates/ for the
-#     per-service templates an operator provisions them from). Every
-#     application service below loads its own file, and only its own
-#     file, via `env_file:` - a service never sees another service's
-#     secrets. These files are provisioned once by an operator and never
-#     rewritten by deploy.sh; they are never stored in this repo, a
-#     release manifest, a Docker image, or AWS SSM Parameter Store - see
-#     deploy/lib/env_config.sh and deploy.sh's validation step, which
-#     refuses to touch the running stack unless every one of the 7 files
-#     exists, is mode 0600, and has every required key set.
+#     auth.env, apiary.env, hive.env, inspection.env, harvest.env,
+#     media.env, statistics.env, subscription.env - see
+#     deploy/lib/env_config.sh for the exact mapping and required-key
+#     lists, and deploy/env-templates/ for the per-service templates an
+#     operator provisions them from). Every application service below
+#     loads its own file, and only its own file, via `env_file:` - a
+#     service never sees another service's secrets. These files are
+#     provisioned once by an operator and never rewritten by deploy.sh;
+#     they are never stored in this repo, a release manifest, a Docker
+#     image, or AWS SSM Parameter Store - see deploy/lib/env_config.sh
+#     and deploy.sh's validation step, which refuses to touch the
+#     running stack unless every one of the 9 files exists, is mode
+#     0600, and has every required key set.
 #
 #   - One narrow exception: Compose's own ${VAR} interpolation (used
 #     below by every postgres-* container's POSTGRES_PASSWORD and every
@@ -134,6 +136,7 @@ services:
       APIARY_SERVICE_URL: http://apiary-service:8080
       HIVE_SERVICE_URL: http://hive-service:8080
       INSPECTION_SERVICE_URL: http://inspection-service:8080
+      HARVEST_SERVICE_URL: http://harvest-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
       STATISTICS_SERVICE_URL: http://statistics-service:8080
       SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
@@ -143,6 +146,7 @@ services:
       apiary-service: { condition: service_healthy }
       hive-service: { condition: service_healthy }
       inspection-service: { condition: service_healthy }
+      harvest-service: { condition: service_healthy }
       media-service: { condition: service_healthy }
       statistics-service: { condition: service_healthy }
       subscription-service: { condition: service_healthy }
@@ -325,6 +329,50 @@ services:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-inspection-service
         awslogs-stream: app-${INSPECTION_IMAGE_TAG:?set INSPECTION_IMAGE_TAG to inspection-service's Git commit SHA}
+        awslogs-create-group: "true"
+
+  # --- harvest-service ---
+  #
+  # Harvest is an independent domain (User -> Apiary -> Hive -> Harvest),
+  # not nested under Inspection - it has no ownership data of its own,
+  # so unlike every other application service here it does not carry a
+  # denormalized-owner cross-service dependency, only hive-service (for
+  # a live ownership check on every request - see
+  # beebase-harvest-service's own README).
+
+  harvest-service:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-harvest-service:${HARVEST_IMAGE_TAG:?set HARVEST_IMAGE_TAG to harvest-service's Git commit SHA}
+    restart: unless-stopped
+    mem_limit: 48m
+    mem_reservation: 16m
+    env_file:
+      - ${BEEBASE_CONFIG_DIR:-../config}/harvest.env
+    environment:
+      APP_ENV: production
+      HTTP_PORT: "8080"
+      GOMEMLIMIT: 40MiB
+      DATABASE_URL: postgres://beebase:${POSTGRES_HARVEST_PASSWORD:?set POSTGRES_HARVEST_PASSWORD}@postgres-harvest:5432/beebase_harvest?sslmode=disable
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
+      HIVE_SERVICE_URL: http://hive-service:8080
+    networks: [beebase]
+    depends_on:
+      postgres-harvest: { condition: service_healthy }
+      auth-service: { condition: service_healthy }
+      hive-service: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate-harvest: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-harvest-service
+        awslogs-stream: app-${HARVEST_IMAGE_TAG:?set HARVEST_IMAGE_TAG to harvest-service's Git commit SHA}
         awslogs-create-group: "true"
 
   # --- media-service ---
@@ -556,6 +604,32 @@ services:
         awslogs-stream: postgres-inspection-${RELEASE:?set RELEASE to the release manifest identifier}
         awslogs-create-group: "true"
 
+  postgres-harvest:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: *pg-tuning-flags
+    mem_limit: 64m
+    mem_reservation: 32m
+    environment:
+      POSTGRES_USER: beebase
+      POSTGRES_PASSWORD: ${POSTGRES_HARVEST_PASSWORD:?set POSTGRES_HARVEST_PASSWORD}
+      POSTGRES_DB: beebase_harvest
+    volumes:
+      - /mnt/beebase-data/postgres/harvest:/var/lib/postgresql/data
+    networks: [beebase]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beebase -d beebase_harvest"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/infra
+        awslogs-stream: postgres-harvest-${RELEASE:?set RELEASE to the release manifest identifier}
+        awslogs-create-group: "true"
+
   postgres-media:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -726,6 +800,25 @@ services:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-inspection-service
         awslogs-stream: migrate-${INSPECTION_IMAGE_TAG:?set INSPECTION_IMAGE_TAG to inspection-service's Git commit SHA}
+        awslogs-create-group: "true"
+
+  migrate-harvest:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-harvest-service:${HARVEST_IMAGE_TAG:?set HARVEST_IMAGE_TAG to harvest-service's Git commit SHA}-migrate
+    restart: "no"
+    mem_limit: 64m
+    command:
+      - -path=/migrations
+      - -database=postgres://beebase:${POSTGRES_HARVEST_PASSWORD:?set POSTGRES_HARVEST_PASSWORD}@postgres-harvest:5432/beebase_harvest?sslmode=disable
+      - up
+    networks: [beebase]
+    depends_on:
+      postgres-harvest: { condition: service_healthy }
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-harvest-service
+        awslogs-stream: migrate-${HARVEST_IMAGE_TAG:?set HARVEST_IMAGE_TAG to harvest-service's Git commit SHA}
         awslogs-create-group: "true"
 
   migrate-media:

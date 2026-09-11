@@ -14,13 +14,14 @@
 # One image-tag variable per application service - matches
 # docker-compose.prod.yml exactly. gateway has no database/migration,
 # statistics-service has no database either but still ships its own
-# image, so all 7 are required in every release.
+# image, so all 9 are required in every release.
 MANIFEST_SERVICE_TAG_KEYS=(
   GATEWAY_IMAGE_TAG
   AUTH_IMAGE_TAG
   APIARY_IMAGE_TAG
   HIVE_IMAGE_TAG
   INSPECTION_IMAGE_TAG
+  HARVEST_IMAGE_TAG
   MEDIA_IMAGE_TAG
   STATISTICS_IMAGE_TAG
   SUBSCRIPTION_IMAGE_TAG
@@ -33,6 +34,7 @@ MANIFEST_MIGRATE_TAG_KEYS=(
   APIARY_IMAGE_TAG
   HIVE_IMAGE_TAG
   INSPECTION_IMAGE_TAG
+  HARVEST_IMAGE_TAG
   MEDIA_IMAGE_TAG
   SUBSCRIPTION_IMAGE_TAG
 )
@@ -47,6 +49,7 @@ declare -gA MANIFEST_ECR_REPO=(
   [APIARY_IMAGE_TAG]=beebase-apiary-service
   [HIVE_IMAGE_TAG]=beebase-hive-service
   [INSPECTION_IMAGE_TAG]=beebase-inspection-service
+  [HARVEST_IMAGE_TAG]=beebase-harvest-service
   [MEDIA_IMAGE_TAG]=beebase-media-service
   [STATISTICS_IMAGE_TAG]=beebase-statistics-service
   [SUBSCRIPTION_IMAGE_TAG]=beebase-subscription-service

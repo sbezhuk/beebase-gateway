@@ -23,7 +23,7 @@ PASS=0
 FAIL=0
 
 # seed_complete_service_config <config-dir>
-# Seeds all 7 services' production .env files, complete and mode 0600 -
+# Seeds all 9 services' production .env files, complete and mode 0600 -
 # the happy-path starting point most tests build on. Distinct fake
 # values per service/key so a test can tell them apart afterwards.
 seed_complete_service_config() {
@@ -39,6 +39,7 @@ EOF
   echo "POSTGRES_APIARY_PASSWORD=fake-apiary-pw" >"${dir}/apiary.env"
   echo "POSTGRES_HIVE_PASSWORD=fake-hive-pw" >"${dir}/hive.env"
   echo "POSTGRES_INSPECTION_PASSWORD=fake-inspection-pw" >"${dir}/inspection.env"
+  echo "POSTGRES_HARVEST_PASSWORD=fake-harvest-pw" >"${dir}/harvest.env"
   cat >"${dir}/media.env" <<'EOF'
 POSTGRES_MEDIA_PASSWORD=fake-media-pw
 STORAGE_BUCKET=fake-bucket
@@ -60,14 +61,14 @@ EOF
   chmod 600 "${dir}"/*.env
 }
 
-ALL_FAKE_SECRETS="fake-auth-pw|fake-apiary-pw|fake-hive-pw|fake-inspection-pw|fake-media-pw|fake-subscription-pw|fake-totp-key|fake-jwt-key|fake-apple-key-id|fake-apple-issuer-id|fake-apple-private-key"
+ALL_FAKE_SECRETS="fake-auth-pw|fake-apiary-pw|fake-hive-pw|fake-inspection-pw|fake-harvest-pw|fake-media-pw|fake-subscription-pw|fake-totp-key|fake-jwt-key|fake-apple-key-id|fake-apple-issuer-id|fake-apple-private-key"
 
 # run_deploy <manifest-file> - invokes deploy.sh with a fresh, isolated
 # /opt/beebase-style layout under a temp dir and mocked aws/docker/curl
 # on PATH. Sets OUT, RC, DOCKER_LOG and DEPLOY_ROOT for the caller to
 # inspect.
 #
-# By default, seeds config/ with a complete set of all 7 services'
+# By default, seeds config/ with a complete set of all 9 services'
 # production .env files first, since deploy.sh now requires every one of
 # them to already exist - set PRESEED_MODE=none to simulate a host where
 # none has been provisioned yet, or PRESEED_MODE=reuse to keep whatever
@@ -116,6 +117,7 @@ AUTH_IMAGE_TAG=0b4d246bb0b4d246bb0b4d246bb0b4d246bb0b4d
 APIARY_IMAGE_TAG=436efffcc436efffcc436efffcc436efffcc436
 HIVE_IMAGE_TAG=f9e257addf9e257addf9e257addf9e257addf9e
 INSPECTION_IMAGE_TAG=8844c5bee8844c5bee8844c5bee8844c5bee8844
+HARVEST_IMAGE_TAG=c2b91af00c2b91af00c2b91af00c2b91af00c2b9
 MEDIA_IMAGE_TAG=a5b903bffa5b903bffa5b903bffa5b903bffa5b9
 STATISTICS_IMAGE_TAG=a0877a011a0877a011a0877a011a0877a011a08
 SUBSCRIPTION_IMAGE_TAG=b85447100b85447100b85447100b85447100b854
@@ -380,7 +382,7 @@ else
 fi
 rm -rf "${BAD_MODE_ROOT}"
 
-# --- 16. a successful deploy leaves every one of the 7 service .env
+# --- 16. a successful deploy leaves every one of the 9 service .env
 #     files byte-for-byte untouched - deploy.sh only ever validates and
 #     reads them, never rewrites them ---
 
@@ -557,16 +559,16 @@ rm -rf "${PARTIAL_SNAPSHOT_ROOT}"
 
 # --- 22. deploy.env is deliberately NOT snapshotted (it's a derived,
 #     deploy-owned, non-secret cache regenerated every deploy - see
-#     docker-compose.prod.yml's header comment) - only the 7 service
+#     docker-compose.prod.yml's header comment) - only the 9 service
 #     .env files are ---
 
 run_deploy "${VALID_FILE}"
 SNAPSHOT_DIR="${DEPLOY_ROOT}/releases/2026.09.07-1/config-snapshot"
 if [ -d "${SNAPSHOT_DIR}" ] && [ ! -e "${SNAPSHOT_DIR}/deploy.env" ]; then
-  echo "PASS: the config snapshot holds only the 7 service .env files, never deploy.env"
+  echo "PASS: the config snapshot holds only the 9 service .env files, never deploy.env"
   PASS=$((PASS + 1))
 else
-  echo "FAIL: the config snapshot holds only the 7 service .env files, never deploy.env"
+  echo "FAIL: the config snapshot holds only the 9 service .env files, never deploy.env"
   ls -la "${SNAPSHOT_DIR}" 2>/dev/null
   FAIL=$((FAIL + 1))
 fi
@@ -575,7 +577,7 @@ fi
 #     read, written to, or required by deploy.sh - even when it exists
 #     and looks complete, it must never become the active source of
 #     configuration. Its mere presence must not let a deploy skip
-#     provisioning the 7 new per-service files. ---
+#     provisioning the 9 new per-service files. ---
 
 LEGACY_ONLY_ROOT="$(mktemp -d)"
 mkdir -p "${LEGACY_ONLY_ROOT}/config" "${LEGACY_ONLY_ROOT}/releases"
@@ -607,10 +609,10 @@ if [ "${RC}" -eq 0 ] &&
   ! grep -qF "legacy-" "${LEGACY_ONLY_ROOT}/config/deploy.env" 2>/dev/null &&
   ! echo "${OUT}" | grep -qF "legacy-"
 then
-  echo "PASS: the legacy .env is left untouched and never becomes part of the active deploy once the 7 files exist"
+  echo "PASS: the legacy .env is left untouched and never becomes part of the active deploy once the 9 files exist"
   PASS=$((PASS + 1))
 else
-  echo "FAIL: the legacy .env is left untouched and never becomes part of the active deploy once the 7 files exist (rc=${RC})"
+  echo "FAIL: the legacy .env is left untouched and never becomes part of the active deploy once the 9 files exist (rc=${RC})"
   cat "${LEGACY_ONLY_ROOT}/config/.env"
   FAIL=$((FAIL + 1))
 fi

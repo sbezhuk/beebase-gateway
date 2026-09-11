@@ -8,10 +8,10 @@ set -euo pipefail
 # (AWS-RunShellScript) targeting this instance - see
 # .github/workflows/production-release.yml for the exact invocation.
 #
-# BeeBase is 7 independent Git repositories, each with its own pipeline
+# BeeBase is 9 independent Git repositories, each with its own pipeline
 # and its own commit SHA - there is no single Git SHA that describes
 # "the app". A release manifest is what does: a plain KEY=VALUE file
-# naming the exact image tag (Git SHA) of every one of the 7 services
+# naming the exact image tag (Git SHA) of every one of the 9 services
 # that make up one production release together. See
 # deploy/lib/manifest.sh for its format and validation rules, and
 # docker-compose.prod.yml's header comment for why the compose file has
@@ -27,12 +27,12 @@ set -euo pipefail
 # deployment script, manifest library, Caddyfile and docker-compose.prod.yml.
 # The bundle is installed during EC2 bootstrap from an immutable S3 object.
 #
-# Configuration: each of the 7 application services owns its own
+# Configuration: each of the 9 application services owns its own
 # production .env at ${BEEBASE_CONFIG_DIR:-/opt/beebase/config}/<service>.env
 # (see deploy/lib/env_config.sh for the exact file names and required
 # keys, and deploy/env-templates/ for the per-service templates an
 # operator provisions them from). This script never writes to any of
-# those 7 files - it only validates them, every time, before it will
+# those 9 files - it only validates them, every time, before it will
 # touch the running stack (see "Validate every service's own .env"
 # below) - and never prints a value from any of them, only key names.
 #
@@ -45,7 +45,7 @@ set -euo pipefail
 # every postgres-* container and migrate-* job) can only ever read from
 # the single file passed via `docker compose --env-file` - see
 # docker-compose.prod.yml's header comment. It is a derived cache
-# regenerated from the 7 authoritative files every time, never operator
+# regenerated from the 9 authoritative files every time, never operator
 # -edited, and never a second source of truth.
 #
 # The old, single, shared /opt/beebase/config/.env this replaced is
@@ -143,7 +143,7 @@ if [ -d "${CONFIG_SNAPSHOT_DIR}" ]; then
     chmod 600 "${live_file}"
   done
 
-  log "restored configuration for all 7 services from release ${RELEASE}'s snapshot"
+  log "restored configuration for all 9 services from release ${RELEASE}'s snapshot"
 fi
 
 # --- 6. Validate every service's own production .env exists, is mode
@@ -153,12 +153,12 @@ fi
 #     pass. Never prints a value, only key names - see
 #     deploy/lib/env_config.sh. ---
 
-log "validating each of the 8 services' production .env files in ${CONFIG_DIR}"
+log "validating each of the 9 services' production .env files in ${CONFIG_DIR}"
 
 env_config_validate_all "${CONFIG_DIR}" \
   || fail "one or more service .env files in ${CONFIG_DIR} failed validation (see above) - provision/fix them before deploying; deploy.sh never creates or completes these files itself"
 
-log "all 8 service .env files present, mode 0600, and complete"
+log "all 9 service .env files present, mode 0600, and complete"
 
 # --- Derive account/region-specific values from the instance itself ---
 #
@@ -180,7 +180,7 @@ ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 #     ${VAR} interpolation reads (see this script's and
 #     docker-compose.prod.yml's header comments for why this file has to
 #     exist at all). Fully regenerated every deploy, atomically swapped
-#     into place only once complete - the 7 service .env files
+#     into place only once complete - the 9 service .env files
 #     themselves are never written to by this script. ---
 
 mkdir -p "${CONFIG_DIR}"
@@ -367,13 +367,14 @@ ${COMPOSE} pull
 # Explicit, individually-checked migrations ensure that a migration failure
 # stops the deployment before application containers are recreated.
 
-log "starting data layer (postgres x6, redis)"
+log "starting data layer (postgres x7, redis)"
 
 ${COMPOSE} up -d \
   postgres-auth \
   postgres-apiary \
   postgres-hive \
   postgres-inspection \
+  postgres-harvest \
   postgres-media \
   postgres-subscription \
   redis
@@ -383,6 +384,7 @@ for svc in \
   postgres-apiary \
   postgres-hive \
   postgres-inspection \
+  postgres-harvest \
   postgres-media \
   postgres-subscription \
   redis
@@ -415,6 +417,7 @@ for svc in \
   migrate-apiary \
   migrate-hive \
   migrate-inspection \
+  migrate-harvest \
   migrate-media \
   migrate-subscription
 do
@@ -482,6 +485,7 @@ auth-service
 apiary-service
 hive-service
 inspection-service
+harvest-service
 media-service
 statistics-service
 subscription-service

@@ -66,6 +66,7 @@ type Upstreams struct {
 	Apiary       http.Handler
 	Hive         http.Handler
 	Inspection   http.Handler
+	Harvest      http.Handler
 	Media        http.Handler
 	Statistics   http.Handler
 	Subscription http.Handler
@@ -114,6 +115,14 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	// service's endpoint, not hive-service's, even though it's nested
 	// under /hives/.
 	r.Get("/api/v1/hives/{hiveID}/inspections", up.Inspection.ServeHTTP)
+
+	// Same reasoning as the inspections route above: harvest records
+	// nested under a hive are harvest-service's endpoints, not
+	// hive-service's. Harvest is an independent domain
+	// (User -> Apiary -> Hive -> Harvest) with no relationship to
+	// Inspection at all - it just happens to share the /hives/{hiveID}
+	// path prefix.
+	r.Mount("/api/v1/hives/{hiveID}/harvest", up.Harvest)
 
 	r.Mount("/api/v1/hives", blockInternalOnly(up.Hive, methodPath{http.MethodDelete, "/api/v1/hives"}))
 	r.Mount("/api/v1/media", blockInternalOnly(up.Media,

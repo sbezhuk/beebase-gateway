@@ -30,7 +30,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
 # write_complete_config <config-dir>
-# Seeds every one of the 7 services' env files, complete and mode 0600.
+# Seeds every one of the 9 services' env files, complete and mode 0600.
 write_complete_config() {
   local dir="$1"
   mkdir -p "${dir}"
@@ -44,6 +44,7 @@ EOF
   echo "POSTGRES_APIARY_PASSWORD=apiary-pw" >"${dir}/apiary.env"
   echo "POSTGRES_HIVE_PASSWORD=hive-pw" >"${dir}/hive.env"
   echo "POSTGRES_INSPECTION_PASSWORD=inspection-pw" >"${dir}/inspection.env"
+  echo "POSTGRES_HARVEST_PASSWORD=harvest-pw" >"${dir}/harvest.env"
   cat >"${dir}/media.env" <<'EOF'
 POSTGRES_MEDIA_PASSWORD=media-pw
 STORAGE_BUCKET=beebase-prod
@@ -65,10 +66,10 @@ EOF
   chmod 600 "${dir}"/*.env
 }
 
-# --- 1. the 8 services and their file names ---
+# --- 1. the 9 services and their file names ---
 
-EXPECTED_SERVICES="gateway auth apiary hive inspection media statistics subscription"
-check "ENV_SERVICES is exactly the 8 BeeBase services" \
+EXPECTED_SERVICES="gateway auth apiary hive inspection harvest media statistics subscription"
+check "ENV_SERVICES is exactly the 9 BeeBase services" \
   $([ "${ENV_SERVICES[*]}" = "${EXPECTED_SERVICES}" ] && echo 1 || echo 0)
 
 declare -A expected_names=(
@@ -77,6 +78,7 @@ declare -A expected_names=(
   [apiary]=apiary.env
   [hive]=hive.env
   [inspection]=inspection.env
+  [harvest]=harvest.env
   [media]=media.env
   [statistics]=statistics.env
   [subscription]=subscription.env
@@ -99,6 +101,8 @@ check "hive requires only POSTGRES_HIVE_PASSWORD" \
   $([ "${ENV_REQUIRED_KEYS[hive]}" = "POSTGRES_HIVE_PASSWORD" ] && echo 1 || echo 0)
 check "inspection requires only POSTGRES_INSPECTION_PASSWORD" \
   $([ "${ENV_REQUIRED_KEYS[inspection]}" = "POSTGRES_INSPECTION_PASSWORD" ] && echo 1 || echo 0)
+check "harvest requires only POSTGRES_HARVEST_PASSWORD" \
+  $([ "${ENV_REQUIRED_KEYS[harvest]}" = "POSTGRES_HARVEST_PASSWORD" ] && echo 1 || echo 0)
 check "media requires POSTGRES_MEDIA_PASSWORD and STORAGE_BUCKET" \
   $([ "${ENV_REQUIRED_KEYS[media]}" = "POSTGRES_MEDIA_PASSWORD STORAGE_BUCKET" ] && echo 1 || echo 0)
 check "gateway requires no production secret" \
@@ -118,7 +122,7 @@ all_services_ok=1
 for service in "${ENV_SERVICES[@]}"; do
   env_config_validate_service "${COMPLETE_DIR}" "${service}" >/dev/null 2>&1 || all_services_ok=0
 done
-check "every one of the 8 services validates individually when complete" "${all_services_ok}"
+check "every one of the 9 services validates individually when complete" "${all_services_ok}"
 
 env_config_validate_all "${COMPLETE_DIR}" >/dev/null 2>&1
 check "env_config_validate_all succeeds when every service's .env is complete" $([ $? -eq 0 ] && echo 1 || echo 0)
@@ -210,7 +214,7 @@ check "env_config_is_secret_key rejects a key auth doesn't own (media's STORAGE_
 env_config_is_secret_key "gateway" "PUBLIC_DOMAIN"
 check "env_config_is_secret_key rejects a non-secret, non-owned key" $([ $? -ne 0 ] && echo 1 || echo 0)
 
-# --- 10. ENV_DB_INTERPOLATION_KEY covers exactly the 5 database-owning
+# --- 10. ENV_DB_INTERPOLATION_KEY covers exactly the 7 database-owning
 #     services, mapping each to its own compose-interpolation variable
 #     name - see docker-compose.prod.yml's header comment for why this
 #     mirroring exists at all ---
@@ -220,15 +224,16 @@ declare -A expected_interp=(
   [apiary]=POSTGRES_APIARY_PASSWORD
   [hive]=POSTGRES_HIVE_PASSWORD
   [inspection]=POSTGRES_INSPECTION_PASSWORD
+  [harvest]=POSTGRES_HARVEST_PASSWORD
   [media]=POSTGRES_MEDIA_PASSWORD
   [subscription]=POSTGRES_SUBSCRIPTION_PASSWORD
 )
 interp_ok=1
-[ "${#ENV_DB_INTERPOLATION_KEY[@]}" -eq 6 ] || interp_ok=0
+[ "${#ENV_DB_INTERPOLATION_KEY[@]}" -eq 7 ] || interp_ok=0
 for service in "${!expected_interp[@]}"; do
   [ "${ENV_DB_INTERPOLATION_KEY[${service}]}" = "${expected_interp[${service}]}" ] || interp_ok=0
 done
-check "ENV_DB_INTERPOLATION_KEY covers exactly the 6 DB-owning services with the right names" "${interp_ok}"
+check "ENV_DB_INTERPOLATION_KEY covers exactly the 7 DB-owning services with the right names" "${interp_ok}"
 
 # --- 11. every deploy/env-templates/*.env.example matches
 #     ENV_TEMPLATE_NAME and never contains a non-empty value for a

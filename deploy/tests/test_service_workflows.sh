@@ -21,6 +21,7 @@ has_migrations() {
     beebase-apiary-service) echo 1 ;;
     beebase-hive-service) echo 1 ;;
     beebase-inspection-service) echo 1 ;;
+    beebase-harvest-service) echo 1 ;;
     beebase-media-service) echo 1 ;;
     beebase-statistics-service) echo 0 ;;
     beebase-subscription-service) echo 1 ;;
@@ -38,6 +39,7 @@ for repo in \
   beebase-apiary-service \
   beebase-hive-service \
   beebase-inspection-service \
+  beebase-harvest-service \
   beebase-media-service \
   beebase-statistics-service \
   beebase-subscription-service; do

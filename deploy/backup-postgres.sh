@@ -1,5 +1,5 @@
 #!/bin/bash
-# Daily logical backup of all 5 BeeBase databases: pg_dump each, gzip,
+# Daily logical backup of all 7 BeeBase databases: pg_dump each, gzip,
 # stream straight to S3 (never landing on local disk, so backups are
 # never stored only on the EC2 instance). Runs via a systemd timer - see
 # beebase-backup.timer/.service, installed once alongside deploy.sh.
@@ -32,6 +32,7 @@ declare -A DATABASES=(
   [postgres-apiary]=beebase_apiary
   [postgres-hive]=beebase_hive
   [postgres-inspection]=beebase_inspection
+  [postgres-harvest]=beebase_harvest
   [postgres-media]=beebase_media
   [postgres-subscription]=beebase_subscription
 )
@@ -54,7 +55,7 @@ for svc in "${!DATABASES[@]}"; do
 done
 
 if [ "${FAILURES}" -gt 0 ]; then
-  fail "${FAILURES} of 6 database backups failed"
+  fail "${FAILURES} of 7 database backups failed"
 fi
 
-log "all 6 database backups completed successfully"
+log "all 7 database backups completed successfully"
