@@ -73,8 +73,8 @@ Then, from this repo:
 
 ```bash
 cp .env.example .env
-(cd ../beebase-auth-service && make keygen)    # paste the JWT_PRIVATE_KEY line into .env
-make up                                        # docker compose up --build
+(cd ../beebase-auth-service && make keygen)   # paste the JWT_PRIVATE_KEY line into .env
+make up                                       # docker compose up --build
 ```
 
 This starts every service, its own Postgres database, applies each
