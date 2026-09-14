@@ -63,6 +63,7 @@ jobs:
     outputs:
       release: ${{ steps.build.outputs.release }}
       manifest_b64: ${{ steps.build.outputs.manifest_b64 }}
+      gateway_image_tag: ${{ steps.build.outputs.gateway_image_tag }}
 
     steps:
       - uses: actions/checkout@v4
@@ -268,6 +269,7 @@ jobs:
 
           echo "release=${RELEASE}" >> "${GITHUB_OUTPUT}"
           echo "manifest_b64=$(base64 -w0 "${MANIFEST_FILE}")" >> "${GITHUB_OUTPUT}"
+          echo "gateway_image_tag=${GATEWAY_IMAGE_TAG}" >> "${GITHUB_OUTPUT}"
 
       - name: Verify every manifest image exists in ECR
         if: inputs.rollback_release == ''
@@ -339,7 +341,9 @@ jobs:
         env:
           RELEASE: ${{ needs.resolve-and-validate.outputs.release }}
           MANIFEST_B64: ${{ needs.resolve-and-validate.outputs.manifest_b64 }}
+          GATEWAY_IMAGE_TAG: ${{ needs.resolve-and-validate.outputs.gateway_image_tag }}
           EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          DEPLOYMENT_BUNDLE_BUCKET: beebase-production-976033326057
         run: |
           set -euo pipefail
 
@@ -352,6 +356,11 @@ jobs:
 
           if [ -n "${MANIFEST_B64}" ]; then
             COMMANDS+=(
+              "BUNDLE_TMP=\"/tmp/beebase-deployment-bundle-\${RELEASE}\"; rm -rf \"\${BUNDLE_TMP}\"; mkdir -p \"\${BUNDLE_TMP}/extracted\""
+              "aws s3 cp \"s3://\${DEPLOYMENT_BUNDLE_BUCKET}/deploy-bundles/\${GATEWAY_IMAGE_TAG}/bundle.tar.gz\" \"\${BUNDLE_TMP}/bundle.tar.gz\" --region \"\${AWS_REGION}\" --only-show-errors"
+              "tar -xzf \"\${BUNDLE_TMP}/bundle.tar.gz\" -C \"\${BUNDLE_TMP}/extracted\""
+              "test -f \"\${BUNDLE_TMP}/extracted/docker-compose.prod.yml\" && test -f \"\${BUNDLE_TMP}/extracted/deploy/deploy.sh\" && test -f \"\${BUNDLE_TMP}/extracted/deploy/lib/manifest.sh\""
+              "rm -rf /opt/beebase/deploy; mkdir -p /opt/beebase/deploy; cp -a \"\${BUNDLE_TMP}/extracted/deploy/.\" /opt/beebase/deploy/; cp \"\${BUNDLE_TMP}/extracted/docker-compose.prod.yml\" /opt/beebase/compose/docker-compose.prod.yml; chmod +x /opt/beebase/deploy/deploy.sh /opt/beebase/deploy/lib/manifest.sh; rm -rf \"\${BUNDLE_TMP}\""
               "if [ -e '${MANIFEST_FILE}' ]; then echo 'release manifest ${MANIFEST_FILE} already exists - releases are immutable' >&2; exit 1; fi"
               "umask 022"
               "echo '${MANIFEST_B64}' | base64 -d > '${MANIFEST_FILE}'"
