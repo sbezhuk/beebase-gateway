@@ -431,6 +431,7 @@ services:
       APIARY_SERVICE_URL: http://apiary-service:8080
       HIVE_SERVICE_URL: http://hive-service:8080
       INSPECTION_SERVICE_URL: http://inspection-service:8080
+      HARVEST_SERVICE_URL: http://harvest-service:8080
     depends_on:
       auth-service:
         condition: service_healthy
@@ -439,6 +440,8 @@ services:
       hive-service:
         condition: service_healthy
       inspection-service:
+        condition: service_healthy
+      harvest-service:
         condition: service_healthy
       redis:
         condition: service_healthy
