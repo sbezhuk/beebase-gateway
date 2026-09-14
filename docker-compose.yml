@@ -266,6 +266,8 @@ services:
   hive-service:
     build:
       context: ../beebase-hive-service
+      secrets:
+        - github_token
     restart: unless-stopped
     # Baseline config comes from hive-service's own .env - not duplicated
     # here. `environment:` below still wins over this for any key both
@@ -359,6 +361,8 @@ services:
   inspection-service:
     build:
       context: ../beebase-inspection-service
+      secrets:
+        - github_token
     restart: unless-stopped
     # Baseline config comes from inspection-service's own .env - not
     # duplicated here. `environment:` below still wins over this for any
@@ -577,6 +581,8 @@ services:
   statistics-service:
     build:
       context: ../beebase-statistics-service
+      secrets:
+        - github_token
     restart: unless-stopped
     # Baseline config comes from statistics-service's own .env - not
     # duplicated here. `environment:` below still wins over this for any
@@ -593,6 +599,7 @@ services:
       APIARY_SERVICE_URL: http://apiary-service:8080
       HIVE_SERVICE_URL: http://hive-service:8080
       INSPECTION_SERVICE_URL: http://inspection-service:8080
+      HARVEST_SERVICE_URL: http://harvest-service:8080
     depends_on:
       auth-service:
         condition: service_healthy
@@ -601,6 +608,8 @@ services:
       hive-service:
         condition: service_healthy
       inspection-service:
+        condition: service_healthy
+      harvest-service:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -716,3 +725,12 @@ volumes:
   beebase_harvest_postgres_data:
   beebase_media_postgres_data:
   beebase_subscription_postgres_data:
+
+secrets:
+  # A read-scoped GitHub PAT (or fine-grained token with contents:read
+  # on beebase-common) for fetching that private module at build time -
+  # see hive/inspection/statistics-service's own Dockerfile for why.
+  # Set BEEBASE_COMMON_GH_TOKEN in your shell/`.env` before `docker
+  # compose build`; never committed, never baked into an image layer.
+  github_token:
+    environment: BEEBASE_COMMON_GH_TOKEN
