@@ -35,7 +35,8 @@ service already routes its own full path:
 | `/api/v1/profile` | auth-service |
 | `/api/v1/apiaries/*` | apiary-service |
 | `/api/v1/hives/{hiveId}/inspections` | inspection-service (checked before the `/api/v1/hives/*` wildcard below, since it'd otherwise match too) |
-| `/api/v1/hives/{hiveId}/harvest*` | harvest-service (checked before the `/api/v1/hives/*` wildcard below, for the same reason - harvest is an independent domain, it just happens to share this path prefix) |
+| `/api/v1/harvests` | harvest-service |
+| `/api/v1/hives/{hiveId}/harvests*` | harvest-service (checked before the `/api/v1/hives/*` wildcard below, for the same reason - harvest is an independent domain, it just happens to share this path prefix) |
 | `/api/v1/hives/*` | hive-service |
 | `/api/v1/inspections/*` | inspection-service |
 | `/api/v1/media/*` | media-service |

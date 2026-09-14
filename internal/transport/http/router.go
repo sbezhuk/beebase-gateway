@@ -123,7 +123,9 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	// (User -> Apiary -> Hive -> Harvest) with no relationship to
 	// Inspection at all - it just happens to share the /hives/{hiveID}
 	// path prefix.
-	r.Mount("/api/v1/hives/{hiveID}/harvest", up.Harvest)
+	// Keep the removed singular subtree as an explicit 404 so the broader
+	// hive-service mount below cannot accidentally proxy it.
+	r.Mount("/api/v1/hives/{hiveID}/harvest", http.NotFoundHandler())
 	r.Mount("/api/v1/hives/{hiveID}/harvests", up.Harvest)
 
 	r.Mount("/api/v1/hives", blockInternalOnly(up.Hive, methodPath{http.MethodDelete, "/api/v1/hives"}))
