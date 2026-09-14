@@ -74,8 +74,18 @@ Then, from this repo:
 ```bash
 cp .env.example .env
 (cd ../beebase-auth-service && make keygen)   # paste the JWT_PRIVATE_KEY line into .env
+export BEEBASE_COMMON_GH_TOKEN=$(gh auth token)   # read-scoped PAT, see below
 make up                                       # docker compose up --build
 ```
+
+`hive-service`, `inspection-service`, and `statistics-service` each
+depend on the private `github.com/sbezhuk/beebase-common` module, so
+building their images needs a GitHub PAT with `contents:read` on that
+repo. `BEEBASE_COMMON_GH_TOKEN` is passed to Docker as a BuildKit
+secret (see each service's Dockerfile and this repo's
+`docker-compose.yml`/`docker-compose.dev.yml`) and never ends up in an
+image layer. CI needs the same token as a `BEEBASE_COMMON_GH_TOKEN`
+GitHub Actions secret on each of those three repos.
 
 This starts every service, its own Postgres database, applies each
 service's migrations once, and brings up the gateway last (after every
