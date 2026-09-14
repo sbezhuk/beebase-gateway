@@ -356,11 +356,11 @@ jobs:
 
           if [ -n "${MANIFEST_B64}" ]; then
             COMMANDS+=(
-              "BUNDLE_TMP=\"/tmp/beebase-deployment-bundle-\${RELEASE}\"; rm -rf \"\${BUNDLE_TMP}\"; mkdir -p \"\${BUNDLE_TMP}/extracted\""
-              "aws s3 cp \"s3://\${DEPLOYMENT_BUNDLE_BUCKET}/deploy-bundles/\${GATEWAY_IMAGE_TAG}/bundle.tar.gz\" \"\${BUNDLE_TMP}/bundle.tar.gz\" --region \"\${AWS_REGION}\" --only-show-errors"
-              "tar -xzf \"\${BUNDLE_TMP}/bundle.tar.gz\" -C \"\${BUNDLE_TMP}/extracted\""
-              "test -f \"\${BUNDLE_TMP}/extracted/docker-compose.prod.yml\" && test -f \"\${BUNDLE_TMP}/extracted/deploy/deploy.sh\" && test -f \"\${BUNDLE_TMP}/extracted/deploy/lib/manifest.sh\""
-              "rm -rf /opt/beebase/deploy; mkdir -p /opt/beebase/deploy; cp -a \"\${BUNDLE_TMP}/extracted/deploy/.\" /opt/beebase/deploy/; cp \"\${BUNDLE_TMP}/extracted/docker-compose.prod.yml\" /opt/beebase/compose/docker-compose.prod.yml; chmod +x /opt/beebase/deploy/deploy.sh /opt/beebase/deploy/lib/manifest.sh; rm -rf \"\${BUNDLE_TMP}\""
+              "BUNDLE_TMP=\"/tmp/beebase-deployment-bundle-${RELEASE}\"; rm -rf \"\${BUNDLE_TMP}\"; mkdir -p \"\${BUNDLE_TMP}/extracted\""
+              "aws s3 cp \"s3://${DEPLOYMENT_BUNDLE_BUCKET}/deploy-bundles/${GATEWAY_IMAGE_TAG}/bundle.tar.gz\" \"/tmp/beebase-deployment-bundle-${RELEASE}/bundle.tar.gz\" --region \"${AWS_REGION}\" --only-show-errors"
+              "tar -xzf \"/tmp/beebase-deployment-bundle-${RELEASE}/bundle.tar.gz\" -C \"/tmp/beebase-deployment-bundle-${RELEASE}/extracted\""
+              "test -f \"/tmp/beebase-deployment-bundle-${RELEASE}/extracted/docker-compose.prod.yml\" && test -f \"/tmp/beebase-deployment-bundle-${RELEASE}/extracted/deploy/deploy.sh\" && test -f \"/tmp/beebase-deployment-bundle-${RELEASE}/extracted/deploy/lib/manifest.sh\""
+              "rm -rf /opt/beebase/deploy; mkdir -p /opt/beebase/deploy; cp -a \"/tmp/beebase-deployment-bundle-${RELEASE}/extracted/deploy/.\" /opt/beebase/deploy/; cp \"/tmp/beebase-deployment-bundle-${RELEASE}/extracted/docker-compose.prod.yml\" /opt/beebase/compose/docker-compose.prod.yml; chmod +x /opt/beebase/deploy/deploy.sh /opt/beebase/deploy/lib/manifest.sh; rm -rf \"/tmp/beebase-deployment-bundle-${RELEASE}\""
               "if [ -e '${MANIFEST_FILE}' ]; then echo 'release manifest ${MANIFEST_FILE} already exists - releases are immutable' >&2; exit 1; fi"
               "umask 022"
               "echo '${MANIFEST_B64}' | base64 -d > '${MANIFEST_FILE}'"
