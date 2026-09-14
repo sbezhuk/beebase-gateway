@@ -96,11 +96,13 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 		{"hive list", http.MethodGet, "/api/v1/hives", "hive"},
 		{"hive list by apiary", http.MethodGet, "/api/v1/apiaries/11111111-1111-1111-1111-111111111111/hives", "hive"},
 		{"hive update", http.MethodPut, "/api/v1/hives/11111111-1111-1111-1111-111111111111", "hive"},
-		{"harvest create", http.MethodPost, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest", "harvest"},
-		{"harvest list", http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest", "harvest"},
-		{"harvest get", http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest/22222222-2222-2222-2222-222222222222", "harvest"},
-		{"harvest update", http.MethodPut, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest/22222222-2222-2222-2222-222222222222", "harvest"},
-		{"harvest delete", http.MethodDelete, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest/22222222-2222-2222-2222-222222222222", "harvest"},
+		{"harvest create", http.MethodPost, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvests", "harvest"},
+		{"harvest list", http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvests", "harvest"},
+		{"harvest global list", http.MethodGet, "/api/v1/harvests", "harvest"},
+		{"harvest plural list", http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvests", "harvest"},
+		{"harvest get", http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvests/22222222-2222-2222-2222-222222222222", "harvest"},
+		{"harvest update", http.MethodPut, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvests/22222222-2222-2222-2222-222222222222", "harvest"},
+		{"harvest delete", http.MethodDelete, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvests/22222222-2222-2222-2222-222222222222", "harvest"},
 		{"apiary create", http.MethodPost, "/api/v1/apiaries", "apiary"},
 		{"apiary list", http.MethodGet, "/api/v1/apiaries", "apiary"},
 		{"apiary delete by id", http.MethodDelete, "/api/v1/apiaries/11111111-1111-1111-1111-111111111111", "apiary"},
@@ -159,14 +161,14 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 }
 
 // TestHarvestRoutesDoNotReachHiveService locks in the routing precedence
-// harvest depends on: /api/v1/hives/{hiveID}/harvest must never fall
+// harvest depends on: /api/v1/hives/{hiveID}/harvests must never fall
 // through to hive-service's own broader /api/v1/hives mount, since that
 // would return hive-service's 404 for a resource it knows nothing about
 // rather than routing to harvest-service.
 func TestHarvestRoutesDoNotReachHiveService(t *testing.T) {
 	router, _, _, _, hive, harvest, _, _ := newTestRouter()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvests", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -178,5 +180,20 @@ func TestHarvestRoutesDoNotReachHiveService(t *testing.T) {
 	}
 	if !harvest.called {
 		t.Error("harvest route did not reach harvest-service")
+	}
+}
+
+func TestLegacySingularHarvestRouteDoesNotProxy(t *testing.T) {
+	router, _, _, _, hive, harvest, _, _ := newTestRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for legacy singular route, got %d", rec.Code)
+	}
+	if hive.called || harvest.called {
+		t.Error("legacy singular harvest route reached an upstream service")
 	}
 }
