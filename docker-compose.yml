@@ -636,6 +636,7 @@ services:
       MEDIA_SERVICE_URL: http://media-service:8080
       STATISTICS_SERVICE_URL: http://statistics-service:8080
       SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
     ports:
       - "8080:8080"
     depends_on:
@@ -655,6 +656,65 @@ services:
         condition: service_healthy
       subscription-service:
         condition: service_healthy
+      notification-service:
+        condition: service_healthy
+
+  # --- notification-service ---
+  notification-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - ../beebase-notification-service/.env
+    environment:
+      POSTGRES_DB: beebase_notification
+    ports:
+      - "5439:5432"
+    volumes:
+      - beebase_notification_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beebase -d beebase_notification"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  notification-migrate:
+    image: migrate/migrate:v4.19.0
+    env_file:
+      - ../beebase-notification-service/.env
+    environment:
+      POSTGRES_HOST: notification-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: beebase_notification
+    depends_on:
+      notification-postgres: {condition: service_healthy}
+    volumes:
+      - ../beebase-notification-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - 'migrate -path=/migrations -database "$$DATABASE_URL" up'
+
+  notification-service:
+    build:
+      context: ../beebase-notification-service
+    restart: unless-stopped
+    env_file:
+      - ../beebase-notification-service/.env
+    environment:
+      APP_ENV: production
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://beebase:beebase@notification-postgres:5432/beebase_notification?sslmode=disable
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
+    depends_on:
+      notification-postgres: {condition: service_healthy}
+      notification-migrate: {condition: service_completed_successfully}
+      auth-service: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   # --- subscription-service ---
 
@@ -725,6 +785,7 @@ volumes:
   beebase_harvest_postgres_data:
   beebase_media_postgres_data:
   beebase_subscription_postgres_data:
+  beebase_notification_postgres_data:
 
 secrets:
   # A read-scoped GitHub PAT (or fine-grained token with contents:read

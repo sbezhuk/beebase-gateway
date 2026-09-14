@@ -49,6 +49,19 @@ MARKER=media-marker
 EOF
 echo "MARKER=statistics-marker" >"${CONFIG_DIR}/statistics.env"
 echo "MARKER=subscription-marker" >"${CONFIG_DIR}/subscription.env"
+cat >"${CONFIG_DIR}/notification.env" <<'EOF'
+POSTGRES_NOTIFICATION_PASSWORD=notification-pw
+FIREBASE_PROJECT_ID=beebase-production
+FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=eyJ0eXBlIjoic2VydmljZV9hY2NvdW50In0=
+AUTH_JWKS_URL=http://auth-service:8080/.well-known/jwks.json
+REDIS_ADDR=redis:6379
+APPLE_BUNDLE_ID=com.beebase.production
+APPLE_KEY_ID=key
+APPLE_ISSUER_ID=issuer
+APPLE_PRIVATE_KEY=private
+APPLE_ENVIRONMENT=Production
+MARKER=notification-marker
+EOF
 chmod 600 "${CONFIG_DIR}"/*.env
 
 FAKE_ENV=(
@@ -65,6 +78,7 @@ FAKE_ENV=(
   MEDIA_IMAGE_TAG=a5b903bffa5b903bffa5b903bffa5b903bffa5b9
   STATISTICS_IMAGE_TAG=a0877a011a0877a011a0877a011a0877a011a08
   SUBSCRIPTION_IMAGE_TAG=b85447100b85447100b85447100b85447100b854
+  NOTIFICATION_IMAGE_TAG=c85447100c85447100c85447100c85447100c854
   PUBLIC_DOMAIN=api.beebase.club
   # Mirrors what deploy.sh copies (by name only, never logged) from each
   # service's own env file into deploy.env - see docker-compose.prod.yml's
@@ -76,6 +90,7 @@ FAKE_ENV=(
   POSTGRES_HARVEST_PASSWORD=harvest-pw
   POSTGRES_MEDIA_PASSWORD=media-pw
   POSTGRES_SUBSCRIPTION_PASSWORD=subscription-pw
+  POSTGRES_NOTIFICATION_PASSWORD=notification-pw
 )
 
 # --- 1. config succeeds with every variable set and every service env
@@ -103,6 +118,7 @@ declare -A expect=(
   [beebase-media-service]=a5b903bffa5b903bffa5b903bffa5b903bffa5b9
   [beebase-statistics-service]=a0877a011a0877a011a0877a011a0877a011a08
   [beebase-subscription-service]=b85447100b85447100b85447100b85447100b854
+  [beebase-notification-service]=c85447100c85447100c85447100c85447100c854
 )
 
 all_resolved_ok=1
@@ -127,6 +143,7 @@ declare -A expect_migrate=(
   [beebase-harvest-service]=c2b91af00c2b91af00c2b91af00c2b91af00c2b9
   [beebase-media-service]=a5b903bffa5b903bffa5b903bffa5b903bffa5b9
   [beebase-subscription-service]=b85447100b85447100b85447100b85447100b854
+  [beebase-notification-service]=c85447100c85447100c85447100c85447100c854
 )
 for repo in "${!expect_migrate[@]}"; do
   want="123456789012.dkr.ecr.eu-central-1.amazonaws.com/${repo}:${expect_migrate[${repo}]}-migrate"

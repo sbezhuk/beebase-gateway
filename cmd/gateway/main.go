@@ -53,6 +53,7 @@ func run() error {
 		"media-service":        cfg.MediaServiceURL,
 		"statistics-service":   cfg.StatisticsServiceURL,
 		"subscription-service": cfg.SubscriptionServiceURL,
+		"notification-service": cfg.NotificationServiceURL,
 	}
 	proxies := make(map[string]http.Handler, len(upstreams))
 	for name, target := range upstreams {
@@ -72,6 +73,7 @@ func run() error {
 		Media:        proxies["media-service"],
 		Statistics:   proxies["statistics-service"],
 		Subscription: proxies["subscription-service"],
+		Notification: proxies["notification-service"],
 	})
 
 	srv := server.New(server.Config{

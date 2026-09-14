@@ -25,6 +25,7 @@ MANIFEST_SERVICE_TAG_KEYS=(
   MEDIA_IMAGE_TAG
   STATISTICS_IMAGE_TAG
   SUBSCRIPTION_IMAGE_TAG
+  NOTIFICATION_IMAGE_TAG
 )
 
 # Services whose migrate image (<tag>-migrate) deploy.sh must also run.
@@ -37,6 +38,7 @@ MANIFEST_MIGRATE_TAG_KEYS=(
   HARVEST_IMAGE_TAG
   MEDIA_IMAGE_TAG
   SUBSCRIPTION_IMAGE_TAG
+  NOTIFICATION_IMAGE_TAG
 )
 
 MANIFEST_REQUIRED_KEYS=(RELEASE "${MANIFEST_SERVICE_TAG_KEYS[@]}")
@@ -53,6 +55,7 @@ declare -gA MANIFEST_ECR_REPO=(
   [MEDIA_IMAGE_TAG]=beebase-media-service
   [STATISTICS_IMAGE_TAG]=beebase-statistics-service
   [SUBSCRIPTION_IMAGE_TAG]=beebase-subscription-service
+  [NOTIFICATION_IMAGE_TAG]=beebase-notification-service
 )
 
 # Populated by manifest_parse.

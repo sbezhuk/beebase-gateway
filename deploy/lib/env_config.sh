@@ -18,7 +18,7 @@
 # Pure bash, no AWS/Docker calls - unit-tested on its own (see
 # deploy/tests/test_env_config.sh), the same way lib/manifest.sh is.
 
-ENV_SERVICES=(gateway auth apiary hive inspection harvest media statistics subscription)
+ENV_SERVICES=(gateway auth apiary hive inspection harvest media statistics subscription notification)
 
 # Production env file name for each service, relative to
 # ${BEEBASE_CONFIG_DIR:-/opt/beebase/config}/ - matches
@@ -33,6 +33,7 @@ declare -gA ENV_FILE_NAME=(
   [media]=media.env
   [statistics]=statistics.env
   [subscription]=subscription.env
+  [notification]=notification.env
 )
 
 # The template an operator provisions that service's real file from.
@@ -46,6 +47,7 @@ declare -gA ENV_TEMPLATE_NAME=(
   [media]=media.env.example
   [statistics]=statistics.env.example
   [subscription]=subscription.env.example
+  [notification]=notification.env.example
 )
 
 # Keys an operator must set directly in that service's own .env before
@@ -67,6 +69,7 @@ declare -gA ENV_REQUIRED_KEYS=(
   [media]="POSTGRES_MEDIA_PASSWORD STORAGE_BUCKET"
   [statistics]=""
   [subscription]="POSTGRES_SUBSCRIPTION_PASSWORD AUTH_JWKS_URL REDIS_ADDR APPLE_BUNDLE_ID APPLE_KEY_ID APPLE_ISSUER_ID APPLE_PRIVATE_KEY APPLE_ENVIRONMENT GOOGLE_PACKAGE_NAME GOOGLE_SERVICE_ACCOUNT_JSON"
+  [notification]="POSTGRES_NOTIFICATION_PASSWORD FIREBASE_PROJECT_ID FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 AUTH_JWKS_URL REDIS_ADDR APPLE_BUNDLE_ID APPLE_KEY_ID APPLE_ISSUER_ID APPLE_PRIVATE_KEY APPLE_ENVIRONMENT"
 )
 
 # Services whose POSTGRES_PASSWORD deploy.sh must also mirror - by key
@@ -91,6 +94,7 @@ declare -gA ENV_DB_INTERPOLATION_KEY=(
   [harvest]=POSTGRES_HARVEST_PASSWORD
   [media]=POSTGRES_MEDIA_PASSWORD
   [subscription]=POSTGRES_SUBSCRIPTION_PASSWORD
+  [notification]=POSTGRES_NOTIFICATION_PASSWORD
 )
 
 # env_config_file_path <config-dir> <service>
@@ -204,7 +208,7 @@ env_config_validate_service() {
 }
 
 # env_config_validate_all <config-dir>
-# Validates every one of the 7 services' env files, reporting every
+# Validates every one of the 10 services' env files, reporting every
 # failure (not just the first) so an operator sees the complete picture
 # in one pass. Returns non-zero if any service failed validation.
 env_config_validate_all() {

@@ -70,6 +70,7 @@ type Upstreams struct {
 	Media        http.Handler
 	Statistics   http.Handler
 	Subscription http.Handler
+	Notification http.Handler
 }
 
 type statusResponse struct {
@@ -137,6 +138,10 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	r.Mount("/api/v1/statistics", up.Statistics)
 	r.Mount("/api/v1/subscription", up.Subscription)
 	r.Mount("/api/v1/subscriptions", up.Subscription)
+	if up.Notification != nil {
+		r.Mount("/api/v1/devices", up.Notification)
+		r.Mount("/api/v1/notifications", up.Notification)
+	}
 
 	return r
 }

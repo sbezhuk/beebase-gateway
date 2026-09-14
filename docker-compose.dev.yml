@@ -147,6 +147,7 @@ services:
       HIVE_SERVICE_URL: http://hive-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
       SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
     depends_on:
       apiary-postgres:
         condition: service_healthy
@@ -155,6 +156,8 @@ services:
       auth-service:
         condition: service_healthy
       subscription-service:
+        condition: service_healthy
+      notification-service:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -515,6 +518,63 @@ services:
       timeout: 3s
       retries: 10
 
+  # --- notification-service ---
+  notification-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-beebase}
+      POSTGRES_PASSWORD: ${POSTGRES_NOTIFICATION_PASSWORD:?set POSTGRES_NOTIFICATION_PASSWORD}
+      POSTGRES_DB: ${NOTIFICATION_DB_NAME:-beebase_notification_dev}
+    ports:
+      - "${NOTIFICATION_POSTGRES_PORT:-15439}:5432"
+    volumes:
+      - beebase_dev_notification_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-beebase} -d ${NOTIFICATION_DB_NAME:-beebase_notification_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  notification-migrate:
+    image: migrate/migrate:v4.19.0
+    depends_on:
+      notification-postgres: {condition: service_healthy}
+    volumes:
+      - ../beebase-notification-service/migrations:/migrations:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - 'migrate -path=/migrations -database "postgres://${POSTGRES_USER:-beebase}:${POSTGRES_NOTIFICATION_PASSWORD:?set POSTGRES_NOTIFICATION_PASSWORD}@notification-postgres:5432/${NOTIFICATION_DB_NAME:-beebase_notification_dev}?sslmode=disable" up'
+
+  notification-service:
+    build:
+      context: ../beebase-notification-service
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_NOTIFICATION_PASSWORD:?set POSTGRES_NOTIFICATION_PASSWORD}@notification-postgres:5432/${NOTIFICATION_DB_NAME:-beebase_notification_dev}?sslmode=disable
+      REDIS_ADDR: redis:6379
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: ${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64}
+      APPLE_BUNDLE_ID: ${APPLE_BUNDLE_ID:-com.beebase.production}
+      APPLE_KEY_ID: ${APPLE_KEY_ID}
+      APPLE_ISSUER_ID: ${APPLE_ISSUER_ID}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY}
+      APPLE_ENVIRONMENT: ${APPLE_ENVIRONMENT:-Sandbox}
+    depends_on:
+      notification-postgres: {condition: service_healthy}
+      notification-migrate: {condition: service_completed_successfully}
+      auth-service: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # --- Gateway ---
   gateway:
     build:
@@ -565,6 +625,7 @@ volumes:
   beebase_dev_harvest_postgres_data:
   beebase_dev_media_postgres_data:
   beebase_dev_subscription_postgres_data:
+  beebase_dev_notification_postgres_data:
   beebase_dev_minio_data:
 
 secrets:

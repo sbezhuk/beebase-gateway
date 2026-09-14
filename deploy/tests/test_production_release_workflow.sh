@@ -33,7 +33,7 @@ fi
 
 # --- all 7 SHA inputs exist, independently (no shared/common SHA) ---
 
-for input in gateway_image_tag auth_image_tag apiary_image_tag hive_image_tag inspection_image_tag media_image_tag statistics_image_tag subscription_image_tag; do
+for input in gateway_image_tag auth_image_tag apiary_image_tag hive_image_tag inspection_image_tag media_image_tag statistics_image_tag subscription_image_tag notification_image_tag; do
   grep -q "^      ${input}:" "${WORKFLOW}"
   check "workflow_dispatch input '${input}' exists" $([ $? -eq 0 ] && echo 1 || echo 0)
 done
@@ -50,7 +50,8 @@ for pair in \
   "inspection_image_tag:INSPECTION_IMAGE_TAG" \
   "media_image_tag:MEDIA_IMAGE_TAG" \
   "statistics_image_tag:STATISTICS_IMAGE_TAG" \
-  "subscription_image_tag:SUBSCRIPTION_IMAGE_TAG"; do
+  "subscription_image_tag:SUBSCRIPTION_IMAGE_TAG" \
+  "notification_image_tag:NOTIFICATION_IMAGE_TAG"; do
   input="${pair%%:*}"
   var="${pair##*:}"
   grep -qF "${var}: \${{ inputs.${input} }}" "${WORKFLOW}" || all_distinct_ok=0

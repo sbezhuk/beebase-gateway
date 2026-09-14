@@ -31,6 +31,7 @@ type Config struct {
 	MediaServiceURL        string
 	StatisticsServiceURL   string
 	SubscriptionServiceURL string
+	NotificationServiceURL string
 }
 
 // Load builds a Config from environment variables, falling back to
@@ -55,6 +56,7 @@ func Load() (*Config, error) {
 		MediaServiceURL:        getEnv("MEDIA_SERVICE_URL", ""),
 		StatisticsServiceURL:   getEnv("STATISTICS_SERVICE_URL", ""),
 		SubscriptionServiceURL: getEnv("SUBSCRIPTION_SERVICE_URL", ""),
+		NotificationServiceURL: getEnv("NOTIFICATION_SERVICE_URL", ""),
 	}
 
 	required := []struct{ name, value string }{
@@ -66,6 +68,7 @@ func Load() (*Config, error) {
 		{"MEDIA_SERVICE_URL", cfg.MediaServiceURL},
 		{"STATISTICS_SERVICE_URL", cfg.StatisticsServiceURL},
 		{"SUBSCRIPTION_SERVICE_URL", cfg.SubscriptionServiceURL},
+		{"NOTIFICATION_SERVICE_URL", cfg.NotificationServiceURL},
 	}
 	for _, r := range required {
 		if r.value == "" {

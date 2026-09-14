@@ -62,13 +62,25 @@ APPLE_ENVIRONMENT=Production
 GOOGLE_PACKAGE_NAME=com.beebase.production
 GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account"}
 EOF
+  cat >"${dir}/notification.env" <<'EOF'
+POSTGRES_NOTIFICATION_PASSWORD=notification-pw
+FIREBASE_PROJECT_ID=beebase-production
+FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=eyJ0eXBlIjoic2VydmljZV9hY2NvdW50In0=
+AUTH_JWKS_URL=http://auth-service:8080/.well-known/jwks.json
+REDIS_ADDR=redis:6379
+APPLE_BUNDLE_ID=com.beebase.production
+APPLE_KEY_ID=apple-key-id
+APPLE_ISSUER_ID=apple-issuer-id
+APPLE_PRIVATE_KEY=apple-private-key
+APPLE_ENVIRONMENT=Production
+EOF
 
   chmod 600 "${dir}"/*.env
 }
 
 # --- 1. the 9 services and their file names ---
 
-EXPECTED_SERVICES="gateway auth apiary hive inspection harvest media statistics subscription"
+EXPECTED_SERVICES="gateway auth apiary hive inspection harvest media statistics subscription notification"
 check "ENV_SERVICES is exactly the 9 BeeBase services" \
   $([ "${ENV_SERVICES[*]}" = "${EXPECTED_SERVICES}" ] && echo 1 || echo 0)
 
@@ -82,6 +94,7 @@ declare -A expected_names=(
   [media]=media.env
   [statistics]=statistics.env
   [subscription]=subscription.env
+  [notification]=notification.env
 )
 all_names_ok=1
 for service in "${ENV_SERVICES[@]}"; do
@@ -111,6 +124,8 @@ check "statistics requires no production secret" \
   $([ -z "${ENV_REQUIRED_KEYS[statistics]}" ] && echo 1 || echo 0)
 check "subscription requires database, auth, redis, Apple and Google production config" \
   $([ "${ENV_REQUIRED_KEYS[subscription]}" = "POSTGRES_SUBSCRIPTION_PASSWORD AUTH_JWKS_URL REDIS_ADDR APPLE_BUNDLE_ID APPLE_KEY_ID APPLE_ISSUER_ID APPLE_PRIVATE_KEY APPLE_ENVIRONMENT GOOGLE_PACKAGE_NAME GOOGLE_SERVICE_ACCOUNT_JSON" ] && echo 1 || echo 0)
+check "notification requires database, Firebase, auth, redis and Apple config" \
+  $([ "${ENV_REQUIRED_KEYS[notification]}" = "POSTGRES_NOTIFICATION_PASSWORD FIREBASE_PROJECT_ID FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 AUTH_JWKS_URL REDIS_ADDR APPLE_BUNDLE_ID APPLE_KEY_ID APPLE_ISSUER_ID APPLE_PRIVATE_KEY APPLE_ENVIRONMENT" ] && echo 1 || echo 0)
 
 # --- 3. a complete, correctly-permissioned config directory validates
 #     cleanly, service by service and all at once ---
@@ -227,9 +242,10 @@ declare -A expected_interp=(
   [harvest]=POSTGRES_HARVEST_PASSWORD
   [media]=POSTGRES_MEDIA_PASSWORD
   [subscription]=POSTGRES_SUBSCRIPTION_PASSWORD
+  [notification]=POSTGRES_NOTIFICATION_PASSWORD
 )
 interp_ok=1
-[ "${#ENV_DB_INTERPOLATION_KEY[@]}" -eq 7 ] || interp_ok=0
+[ "${#ENV_DB_INTERPOLATION_KEY[@]}" -eq 8 ] || interp_ok=0
 for service in "${!expected_interp[@]}"; do
   [ "${ENV_DB_INTERPOLATION_KEY[${service}]}" = "${expected_interp[${service}]}" ] || interp_ok=0
 done

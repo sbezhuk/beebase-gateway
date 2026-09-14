@@ -8,13 +8,14 @@
 # built-in password, by design:
 #   - ECR_REGISTRY: required, no default (see the ${VAR:?...} guards
 #     below).
-#   - Each of the 9 services is an independent Git repository with its
+#   - Each of the 10 services is an independent Git repository with its
 #     own pipeline and its own commit SHA, so there is deliberately no
 #     single shared IMAGE_TAG - each service has its own
 #     <SERVICE>_IMAGE_TAG variable (GATEWAY_IMAGE_TAG, AUTH_IMAGE_TAG,
 #     APIARY_IMAGE_TAG, HIVE_IMAGE_TAG, INSPECTION_IMAGE_TAG,
 #     HARVEST_IMAGE_TAG, MEDIA_IMAGE_TAG, STATISTICS_IMAGE_TAG,
-#     SUBSCRIPTION_IMAGE_TAG), all required, none defaulted. Together,
+#     SUBSCRIPTION_IMAGE_TAG, NOTIFICATION_IMAGE_TAG), all required,
+#     none defaulted. Together,
 #     one value per variable, they form a release manifest - see
 #     deploy/lib/manifest.sh and deploy/deploy.sh, which is the only
 #     thing that ever sets them. RELEASE is the manifest's own
@@ -22,10 +23,10 @@
 #     services that have no image tag of their own (edge, postgres,
 #     redis) - it never substitutes for an image tag.
 #
-#   - Each of the 9 application services owns its own production .env at
+#   - Each of the 10 application services owns its own production .env at
 #     ${BEEBASE_CONFIG_DIR:-../config}/<service>.env (gateway.env,
 #     auth.env, apiary.env, hive.env, inspection.env, harvest.env,
-#     media.env, statistics.env, subscription.env - see
+#     media.env, statistics.env, subscription.env, notification.env - see
 #     deploy/lib/env_config.sh for the exact mapping and required-key
 #     lists, and deploy/env-templates/ for the per-service templates an
 #     operator provisions them from). Every application service below
@@ -140,6 +141,7 @@ services:
       MEDIA_SERVICE_URL: http://media-service:8080
       STATISTICS_SERVICE_URL: http://statistics-service:8080
       SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
     networks: [beebase]
     depends_on:
       auth-service: { condition: service_healthy }
@@ -150,6 +152,7 @@ services:
       media-service: { condition: service_healthy }
       statistics-service: { condition: service_healthy }
       subscription-service: { condition: service_healthy }
+      notification-service: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 5s
@@ -497,6 +500,41 @@ services:
         awslogs-stream: app-${SUBSCRIPTION_IMAGE_TAG:?set SUBSCRIPTION_IMAGE_TAG to subscription-service's Git commit SHA}
         awslogs-create-group: "true"
 
+  # --- notification-service ---
+
+  notification-service:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-notification-service:${NOTIFICATION_IMAGE_TAG:?set NOTIFICATION_IMAGE_TAG to notification-service's Git commit SHA}
+    restart: unless-stopped
+    mem_limit: 48m
+    mem_reservation: 16m
+    env_file:
+      - ${BEEBASE_CONFIG_DIR:-../config}/notification.env
+    environment:
+      APP_ENV: production
+      HTTP_PORT: "8080"
+      GOMEMLIMIT: 40MiB
+      DATABASE_URL: postgres://beebase:${POSTGRES_NOTIFICATION_PASSWORD:?set POSTGRES_NOTIFICATION_PASSWORD}@postgres-notification:5432/beebase_notification?sslmode=disable
+      AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      REDIS_ADDR: redis:6379
+    networks: [beebase]
+    depends_on:
+      postgres-notification: { condition: service_healthy }
+      auth-service: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate-notification: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-notification-service
+        awslogs-stream: app-${NOTIFICATION_IMAGE_TAG:?set NOTIFICATION_IMAGE_TAG to notification-service's Git commit SHA}
+        awslogs-create-group: "true"
+
   # --- PostgreSQL, one container per bounded context, each on its own
   #     bind-mounted directory on the dedicated EBS data volume. No host
   #     port is published for any of them - only reachable from other
@@ -684,6 +722,32 @@ services:
         awslogs-stream: postgres-subscription-${RELEASE:?set RELEASE to the release manifest identifier}
         awslogs-create-group: "true"
 
+  postgres-notification:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: *pg-tuning-flags
+    mem_limit: 64m
+    mem_reservation: 32m
+    environment:
+      POSTGRES_USER: beebase
+      POSTGRES_PASSWORD: ${POSTGRES_NOTIFICATION_PASSWORD:?set POSTGRES_NOTIFICATION_PASSWORD}
+      POSTGRES_DB: beebase_notification
+    volumes:
+      - /mnt/beebase-data/postgres/notification:/var/lib/postgresql/data
+    networks: [beebase]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beebase -d beebase_notification"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/infra
+        awslogs-stream: postgres-notification-${RELEASE:?set RELEASE to the release manifest identifier}
+        awslogs-create-group: "true"
+
   # --- Redis: shared single-active-session store ---
   #
   # No host port published, no AUTH (the app doesn't support it yet -
@@ -859,6 +923,25 @@ services:
         awslogs-region: ${AWS_REGION:?set AWS_REGION}
         awslogs-group: /beebase/prod/beebase-subscription-service
         awslogs-stream: migrate-${SUBSCRIPTION_IMAGE_TAG:?set SUBSCRIPTION_IMAGE_TAG to subscription-service's Git commit SHA}
+        awslogs-create-group: "true"
+
+  migrate-notification:
+    image: ${ECR_REGISTRY:?set ECR_REGISTRY}/beebase-notification-service:${NOTIFICATION_IMAGE_TAG:?set NOTIFICATION_IMAGE_TAG to notification-service's Git commit SHA}-migrate
+    restart: "no"
+    mem_limit: 64m
+    command:
+      - -path=/migrations
+      - -database=postgres://beebase:${POSTGRES_NOTIFICATION_PASSWORD:?set POSTGRES_NOTIFICATION_PASSWORD}@postgres-notification:5432/beebase_notification?sslmode=disable
+      - up
+    networks: [beebase]
+    depends_on:
+      postgres-notification: { condition: service_healthy }
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?set AWS_REGION}
+        awslogs-group: /beebase/prod/beebase-notification-service
+        awslogs-stream: migrate-${NOTIFICATION_IMAGE_TAG:?set NOTIFICATION_IMAGE_TAG to notification-service's Git commit SHA}
         awslogs-create-group: "true"
 
 networks:

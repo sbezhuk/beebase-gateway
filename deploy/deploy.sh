@@ -11,7 +11,7 @@ set -euo pipefail
 # BeeBase is 9 independent Git repositories, each with its own pipeline
 # and its own commit SHA - there is no single Git SHA that describes
 # "the app". A release manifest is what does: a plain KEY=VALUE file
-# naming the exact image tag (Git SHA) of every one of the 9 services
+# naming the exact image tag (Git SHA) of every one of the 10 services
 # that make up one production release together. See
 # deploy/lib/manifest.sh for its format and validation rules, and
 # docker-compose.prod.yml's header comment for why the compose file has
@@ -367,7 +367,7 @@ ${COMPOSE} pull
 # Explicit, individually-checked migrations ensure that a migration failure
 # stops the deployment before application containers are recreated.
 
-log "starting data layer (postgres x7, redis)"
+log "starting data layer (postgres x8, redis)"
 
 ${COMPOSE} up -d \
   postgres-auth \
@@ -377,6 +377,7 @@ ${COMPOSE} up -d \
   postgres-harvest \
   postgres-media \
   postgres-subscription \
+  postgres-notification \
   redis
 
 for svc in \
@@ -387,6 +388,7 @@ for svc in \
   postgres-harvest \
   postgres-media \
   postgres-subscription \
+  postgres-notification \
   redis
 do
   log "waiting for ${svc} to be healthy"
@@ -489,6 +491,7 @@ harvest-service
 media-service
 statistics-service
 subscription-service
+notification-service
 "
 
 for svc in ${APP_SERVICES}; do

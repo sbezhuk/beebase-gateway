@@ -58,10 +58,23 @@ GOOGLE_PACKAGE_NAME=com.beebase.production
 GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account"}
 EOF
 
+  cat >"${dir}/notification.env" <<'EOF'
+POSTGRES_NOTIFICATION_PASSWORD=fake-notification-pw
+FIREBASE_PROJECT_ID=beebase-production
+FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=eyJ0eXBlIjoic2VydmljZV9hY2NvdW50In0=
+AUTH_JWKS_URL=http://auth-service:8080/.well-known/jwks.json
+REDIS_ADDR=redis:6379
+APPLE_BUNDLE_ID=com.beebase.production
+APPLE_KEY_ID=fake-apple-key-id
+APPLE_ISSUER_ID=fake-apple-issuer-id
+APPLE_PRIVATE_KEY=fake-apple-private-key
+APPLE_ENVIRONMENT=Production
+EOF
+
   chmod 600 "${dir}"/*.env
 }
 
-ALL_FAKE_SECRETS="fake-auth-pw|fake-apiary-pw|fake-hive-pw|fake-inspection-pw|fake-harvest-pw|fake-media-pw|fake-subscription-pw|fake-totp-key|fake-jwt-key|fake-apple-key-id|fake-apple-issuer-id|fake-apple-private-key"
+ALL_FAKE_SECRETS="fake-auth-pw|fake-apiary-pw|fake-hive-pw|fake-inspection-pw|fake-harvest-pw|fake-media-pw|fake-subscription-pw|fake-notification-pw|fake-totp-key|fake-jwt-key|fake-apple-key-id|fake-apple-issuer-id|fake-apple-private-key"
 
 # run_deploy <manifest-file> - invokes deploy.sh with a fresh, isolated
 # /opt/beebase-style layout under a temp dir and mocked aws/docker/curl
@@ -120,6 +133,7 @@ INSPECTION_IMAGE_TAG=8844c5bee8844c5bee8844c5bee8844c5bee8844
 HARVEST_IMAGE_TAG=c2b91af00c2b91af00c2b91af00c2b91af00c2b9
 MEDIA_IMAGE_TAG=a5b903bffa5b903bffa5b903bffa5b903bffa5b9
 STATISTICS_IMAGE_TAG=a0877a011a0877a011a0877a011a0877a011a08
+NOTIFICATION_IMAGE_TAG=c85447100c85447100c85447100c85447100c854
 SUBSCRIPTION_IMAGE_TAG=b85447100b85447100b85447100b85447100b854
 EOF
 }
