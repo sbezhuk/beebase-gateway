@@ -108,6 +108,7 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 
 	r.Mount("/api/v1/apiaries", blockInternalOnly(up.Apiary, methodPath{http.MethodDelete, "/api/v1/apiaries"}))
 	r.Mount("/api/v1/inspections", up.Inspection)
+	r.Mount("/api/v1/harvests", up.Harvest)
 
 	// More specific than the "/api/v1/hives" mount below (chi resolves by
 	// specificity, not registration order, so this always wins for this
@@ -123,6 +124,7 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	// Inspection at all - it just happens to share the /hives/{hiveID}
 	// path prefix.
 	r.Mount("/api/v1/hives/{hiveID}/harvest", up.Harvest)
+	r.Mount("/api/v1/hives/{hiveID}/harvests", up.Harvest)
 
 	r.Mount("/api/v1/hives", blockInternalOnly(up.Hive, methodPath{http.MethodDelete, "/api/v1/hives"}))
 	r.Mount("/api/v1/media", blockInternalOnly(up.Media,

@@ -98,6 +98,8 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 		{"hive update", http.MethodPut, "/api/v1/hives/11111111-1111-1111-1111-111111111111", "hive"},
 		{"harvest create", http.MethodPost, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest", "harvest"},
 		{"harvest list", http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest", "harvest"},
+		{"harvest global list", http.MethodGet, "/api/v1/harvests", "harvest"},
+		{"harvest plural list", http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvests", "harvest"},
 		{"harvest get", http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest/22222222-2222-2222-2222-222222222222", "harvest"},
 		{"harvest update", http.MethodPut, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest/22222222-2222-2222-2222-222222222222", "harvest"},
 		{"harvest delete", http.MethodDelete, "/api/v1/hives/11111111-1111-1111-1111-111111111111/harvest/22222222-2222-2222-2222-222222222222", "harvest"},
