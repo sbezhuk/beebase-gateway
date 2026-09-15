@@ -36,10 +36,10 @@ POSTGRES_AUTH_PASSWORD=fake-auth-pw
 JWT_PRIVATE_KEY=fake-jwt-key
 TOTP_ENCRYPTION_KEY=fake-totp-key
 EOF
-  echo "POSTGRES_APIARY_PASSWORD=fake-apiary-pw" >"${dir}/apiary.env"
-  echo "POSTGRES_HIVE_PASSWORD=fake-hive-pw" >"${dir}/hive.env"
-  echo "POSTGRES_INSPECTION_PASSWORD=fake-inspection-pw" >"${dir}/inspection.env"
-  echo "POSTGRES_HARVEST_PASSWORD=fake-harvest-pw" >"${dir}/harvest.env"
+  echo -e "POSTGRES_APIARY_PASSWORD=fake-apiary-pw\nINTERNAL_SERVICE_TOKEN=fake-internal-token" >"${dir}/apiary.env"
+  echo -e "POSTGRES_HIVE_PASSWORD=fake-hive-pw\nINTERNAL_SERVICE_TOKEN=fake-internal-token" >"${dir}/hive.env"
+  echo -e "POSTGRES_INSPECTION_PASSWORD=fake-inspection-pw\nINTERNAL_SERVICE_TOKEN=fake-internal-token" >"${dir}/inspection.env"
+  echo -e "POSTGRES_HARVEST_PASSWORD=fake-harvest-pw\nINTERNAL_SERVICE_TOKEN=fake-internal-token" >"${dir}/harvest.env"
   cat >"${dir}/media.env" <<'EOF'
 POSTGRES_MEDIA_PASSWORD=fake-media-pw
 STORAGE_BUCKET=fake-bucket
@@ -60,6 +60,7 @@ EOF
 
   cat >"${dir}/notification.env" <<'EOF'
 POSTGRES_NOTIFICATION_PASSWORD=fake-notification-pw
+INTERNAL_SERVICE_TOKEN=fake-internal-token
 FIREBASE_PROJECT_ID=beebase-production
 FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=eyJ0eXBlIjoic2VydmljZV9hY2NvdW50In0=
 AUTH_JWKS_URL=http://auth-service:8080/.well-known/jwks.json

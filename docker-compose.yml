@@ -192,6 +192,7 @@ services:
       POSTGRES_PORT: "5432"
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       # Deleting an apiary cascades to its hives and media. hive-service
       # and media-service are not added to depends_on below: each already
       # depends on apiary-service (for its own ownership verifier), so the
@@ -286,6 +287,7 @@ services:
       POSTGRES_PORT: "5432"
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       APIARY_SERVICE_URL: http://apiary-service:8080
       # Deleting a hive cascades to its inspections and media.
       # inspection-service and media-service are not added to depends_on
@@ -383,6 +385,7 @@ services:
       POSTGRES_PORT: "5432"
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       HIVE_SERVICE_URL: http://hive-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
       # Handed to clients as part of each image's image_url, so - unlike
@@ -471,6 +474,7 @@ services:
       POSTGRES_PORT: "5432"
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       # Harvest has no ownership data of its own: every operation
       # confirms the caller owns the specified hive by calling
       # hive-service directly, on every request (see
@@ -705,6 +709,7 @@ services:
       DATABASE_URL: postgres://beebase:beebase@notification-postgres:5432/beebase_notification?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
     depends_on:
       notification-postgres: {condition: service_healthy}
       notification-migrate: {condition: service_completed_successfully}

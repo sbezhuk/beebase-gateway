@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -55,6 +56,19 @@ func blockInternalOnly(next http.Handler, blocked ...methodPath) http.Handler {
 				http.NotFound(w, r)
 				return
 			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// blockInternalPaths prevents the public gateway from ever proxying a
+// backend endpoint in the internal namespace, regardless of whether a
+// service is mounted today or added later.
+func blockInternalPaths(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/internal" || strings.HasPrefix(r.URL.Path, "/internal/") {
+			http.NotFound(w, r)
+			return
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -140,9 +154,10 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	r.Mount("/api/v1/subscriptions", up.Subscription)
 	if up.Notification != nil {
 		r.Mount("/api/v1/devices", up.Notification)
+		r.Mount("/api/v1/reminders", blockInternalOnly(up.Notification, methodPath{http.MethodPost, "/api/v1/reminders/cleanup"}))
 	}
 
-	return r
+	return blockInternalPaths(r)
 }
 
 // requestLogger logs each request's method, path, status, and duration
