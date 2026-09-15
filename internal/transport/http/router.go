@@ -140,6 +140,7 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	r.Mount("/api/v1/subscriptions", up.Subscription)
 	if up.Notification != nil {
 		r.Mount("/api/v1/devices", up.Notification)
+		r.Mount("/api/v1/reminders", up.Notification)
 	}
 
 	return r
