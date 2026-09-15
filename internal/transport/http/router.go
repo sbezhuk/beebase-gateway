@@ -119,7 +119,7 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	// More specific than the "/api/v1/apiaries" mount below: listing hives
 	// for an apiary is hive-service's endpoint, not apiary-service's, even
 	// though it's nested under /apiaries/.
-	r.Get("/api/v1/apiaries/{apiaryID}/hives", up.Hive.ServeHTTP)
+	r.Get("/api/v1/apiaries/{apiaryId}/hives", up.Hive.ServeHTTP)
 
 	r.Mount("/api/v1/apiaries", blockInternalOnly(up.Apiary, methodPath{http.MethodDelete, "/api/v1/apiaries"}))
 	r.Mount("/api/v1/inspections", up.Inspection)
