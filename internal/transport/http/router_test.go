@@ -178,7 +178,7 @@ func TestLegitimateRoutesStillProxy(t *testing.T) {
 }
 
 // TestHarvestRoutesDoNotReachHiveService locks in the routing precedence
-// harvest depends on: /api/v1/hives/{hiveID}/harvests must never fall
+// harvest depends on: /api/v1/hives/{hiveId}/harvests must never fall
 // through to hive-service's own broader /api/v1/hives mount, since that
 // would return hive-service's 404 for a resource it knows nothing about
 // rather than routing to harvest-service.

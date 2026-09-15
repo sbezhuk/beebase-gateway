@@ -16,12 +16,12 @@ import (
 )
 
 // attachPathPattern matches media-service's attach endpoint,
-// "/api/v1/media/{mediaID}/attach", for any mediaID segment.
+// "/api/v1/media/{mediaId}/attach", for any mediaId segment.
 var attachPathPattern = regexp.MustCompile(`^/api/v1/media/[^/]+/attach$`)
 
 // attachPath is a sentinel methodPath.path value recognized by
 // blockInternalOnly as "match attachPathPattern" rather than an exact
-// string, since the real path varies by mediaID.
+// string, since the real path varies by mediaId.
 const attachPath = "<attach>"
 
 // methodPath identifies one internal-only route to block: an exact HTTP
@@ -130,18 +130,18 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	// one path shape): listing inspections for a hive is inspection-
 	// service's endpoint, not hive-service's, even though it's nested
 	// under /hives/.
-	r.Get("/api/v1/hives/{hiveID}/inspections", up.Inspection.ServeHTTP)
+	r.Get("/api/v1/hives/{hiveId}/inspections", up.Inspection.ServeHTTP)
 
 	// Same reasoning as the inspections route above: harvest records
 	// nested under a hive are harvest-service's endpoints, not
 	// hive-service's. Harvest is an independent domain
 	// (User -> Apiary -> Hive -> Harvest) with no relationship to
-	// Inspection at all - it just happens to share the /hives/{hiveID}
+	// Inspection at all - it just happens to share the /hives/{hiveId}
 	// path prefix.
 	// Keep the removed singular subtree as an explicit 404 so the broader
 	// hive-service mount below cannot accidentally proxy it.
-	r.Mount("/api/v1/hives/{hiveID}/harvest", http.NotFoundHandler())
-	r.Mount("/api/v1/hives/{hiveID}/harvests", up.Harvest)
+	r.Mount("/api/v1/hives/{hiveId}/harvest", http.NotFoundHandler())
+	r.Mount("/api/v1/hives/{hiveId}/harvests", up.Harvest)
 
 	r.Mount("/api/v1/hives", blockInternalOnly(up.Hive, methodPath{http.MethodDelete, "/api/v1/hives"}))
 	r.Mount("/api/v1/media", blockInternalOnly(up.Media,
