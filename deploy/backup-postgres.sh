@@ -34,6 +34,33 @@ MEDIA_ENV_FILE="${CONFIG_DIR}/media.env"
 S3_BACKUP_BUCKET=$(grep -m1 '^STORAGE_BUCKET=' "${MEDIA_ENV_FILE}" | cut -d= -f2-)
 [ -n "${S3_BACKUP_BUCKET}" ] || fail "STORAGE_BUCKET not set in ${MEDIA_ENV_FILE}"
 
+# Same IMDSv2 pattern as healthcheck-containers.sh's UnhealthyContainerCount
+# metric, so this run's outcome is visible in CloudWatch instead of only in
+# the local systemd journal - see terraform/modules/cloudwatch's
+# backup_missing/backup_failed alarms.
+IMDS_TOKEN=$(curl -fsS -X PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+AWS_REGION=$(curl -fsS -H "X-aws-ec2-metadata-token: ${IMDS_TOKEN}" \
+  http://169.254.169.254/latest/meta-data/placement/region)
+INSTANCE_ID=$(curl -fsS -H "X-aws-ec2-metadata-token: ${IMDS_TOKEN}" \
+  http://169.254.169.254/latest/meta-data/instance-id)
+
+# Best-effort: a transient CloudWatch API hiccup must never itself turn a
+# genuinely successful backup run into a reported failure (or mask a real
+# one) - the FAILURES count below is always the sole source of truth for
+# this script's exit code.
+publish_metric() {
+  local metric_name="$1"
+  aws cloudwatch put-metric-data \
+    --region "${AWS_REGION}" \
+    --namespace "BeeBase/Production" \
+    --metric-name "${metric_name}" \
+    --dimensions "InstanceId=${INSTANCE_ID}" \
+    --value 1 \
+    --unit Count \
+    || log "WARNING: failed to publish ${metric_name} metric (backup result above is still authoritative)"
+}
+
 TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
 FAILURES=0
 
@@ -67,7 +94,9 @@ for svc in "${!DATABASES[@]}"; do
 done
 
 if [ "${FAILURES}" -gt 0 ]; then
+  publish_metric BackupFailure
   fail "${FAILURES} of 8 database backups failed"
 fi
 
+publish_metric BackupSuccess
 log "all 8 database backups completed successfully"
