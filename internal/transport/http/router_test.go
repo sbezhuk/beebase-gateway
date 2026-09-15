@@ -77,6 +77,23 @@ func TestInternalOnlyRoutesAreBlocked(t *testing.T) {
 	}
 }
 
+func TestAllInternalPathsAreBlocked(t *testing.T) {
+	router, _, apiary, media, hive, harvest, _, _ := newTestRouter()
+	for _, path := range []string{"/internal", "/internal/anything", "/internal/api/v1/reminders/cleanup"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, path, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404", rec.Code)
+			}
+			if apiary.called || media.called || hive.called || harvest.called {
+				t.Fatal("internal request reached an upstream")
+			}
+		})
+	}
+}
+
 // TestLegitimateRoutesStillProxy is the flip side: the blocking fix must
 // not collateral-damage any real, client-facing route at the same or a
 // neighboring path.

@@ -41,10 +41,10 @@ POSTGRES_AUTH_PASSWORD=auth-pw
 JWT_PRIVATE_KEY=jwt-key
 TOTP_ENCRYPTION_KEY=totp-key
 EOF
-  echo "POSTGRES_APIARY_PASSWORD=apiary-pw" >"${dir}/apiary.env"
-  echo "POSTGRES_HIVE_PASSWORD=hive-pw" >"${dir}/hive.env"
-  echo "POSTGRES_INSPECTION_PASSWORD=inspection-pw" >"${dir}/inspection.env"
-  echo "POSTGRES_HARVEST_PASSWORD=harvest-pw" >"${dir}/harvest.env"
+  echo -e "POSTGRES_APIARY_PASSWORD=apiary-pw\nINTERNAL_SERVICE_TOKEN=internal-pw" >"${dir}/apiary.env"
+  echo -e "POSTGRES_HIVE_PASSWORD=hive-pw\nINTERNAL_SERVICE_TOKEN=internal-pw" >"${dir}/hive.env"
+  echo -e "POSTGRES_INSPECTION_PASSWORD=inspection-pw\nINTERNAL_SERVICE_TOKEN=internal-pw" >"${dir}/inspection.env"
+  echo -e "POSTGRES_HARVEST_PASSWORD=harvest-pw\nINTERNAL_SERVICE_TOKEN=internal-pw" >"${dir}/harvest.env"
   cat >"${dir}/media.env" <<'EOF'
 POSTGRES_MEDIA_PASSWORD=media-pw
 STORAGE_BUCKET=beebase-prod
@@ -64,6 +64,7 @@ GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account"}
 EOF
   cat >"${dir}/notification.env" <<'EOF'
 POSTGRES_NOTIFICATION_PASSWORD=notification-pw
+INTERNAL_SERVICE_TOKEN=internal-pw
 FIREBASE_PROJECT_ID=beebase-production
 FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=eyJ0eXBlIjoic2VydmljZV9hY2NvdW50In0=
 AUTH_JWKS_URL=http://auth-service:8080/.well-known/jwks.json
@@ -108,14 +109,14 @@ check "each service maps to <service>.env exactly" "${all_names_ok}"
 
 check "auth requires POSTGRES_AUTH_PASSWORD, JWT_PRIVATE_KEY and TOTP_ENCRYPTION_KEY" \
   $([ "${ENV_REQUIRED_KEYS[auth]}" = "POSTGRES_AUTH_PASSWORD JWT_PRIVATE_KEY TOTP_ENCRYPTION_KEY" ] && echo 1 || echo 0)
-check "apiary requires only POSTGRES_APIARY_PASSWORD" \
-  $([ "${ENV_REQUIRED_KEYS[apiary]}" = "POSTGRES_APIARY_PASSWORD" ] && echo 1 || echo 0)
+check "apiary requires database and internal auth" \
+  $([ "${ENV_REQUIRED_KEYS[apiary]}" = "POSTGRES_APIARY_PASSWORD INTERNAL_SERVICE_TOKEN" ] && echo 1 || echo 0)
 check "hive requires only POSTGRES_HIVE_PASSWORD" \
-  $([ "${ENV_REQUIRED_KEYS[hive]}" = "POSTGRES_HIVE_PASSWORD" ] && echo 1 || echo 0)
+  $([ "${ENV_REQUIRED_KEYS[hive]}" = "POSTGRES_HIVE_PASSWORD INTERNAL_SERVICE_TOKEN" ] && echo 1 || echo 0)
 check "inspection requires only POSTGRES_INSPECTION_PASSWORD" \
-  $([ "${ENV_REQUIRED_KEYS[inspection]}" = "POSTGRES_INSPECTION_PASSWORD" ] && echo 1 || echo 0)
+  $([ "${ENV_REQUIRED_KEYS[inspection]}" = "POSTGRES_INSPECTION_PASSWORD INTERNAL_SERVICE_TOKEN" ] && echo 1 || echo 0)
 check "harvest requires only POSTGRES_HARVEST_PASSWORD" \
-  $([ "${ENV_REQUIRED_KEYS[harvest]}" = "POSTGRES_HARVEST_PASSWORD" ] && echo 1 || echo 0)
+  $([ "${ENV_REQUIRED_KEYS[harvest]}" = "POSTGRES_HARVEST_PASSWORD INTERNAL_SERVICE_TOKEN" ] && echo 1 || echo 0)
 check "media requires POSTGRES_MEDIA_PASSWORD and STORAGE_BUCKET" \
   $([ "${ENV_REQUIRED_KEYS[media]}" = "POSTGRES_MEDIA_PASSWORD STORAGE_BUCKET" ] && echo 1 || echo 0)
 check "gateway requires no production secret" \
@@ -125,7 +126,7 @@ check "statistics requires no production secret" \
 check "subscription requires database, auth, redis, Apple and Google production config" \
   $([ "${ENV_REQUIRED_KEYS[subscription]}" = "POSTGRES_SUBSCRIPTION_PASSWORD AUTH_JWKS_URL REDIS_ADDR APPLE_BUNDLE_ID APPLE_KEY_ID APPLE_ISSUER_ID APPLE_PRIVATE_KEY APPLE_ENVIRONMENT GOOGLE_PACKAGE_NAME GOOGLE_SERVICE_ACCOUNT_JSON" ] && echo 1 || echo 0)
 check "notification requires database, Firebase, auth, redis and Apple config" \
-  $([ "${ENV_REQUIRED_KEYS[notification]}" = "POSTGRES_NOTIFICATION_PASSWORD FIREBASE_PROJECT_ID FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 AUTH_JWKS_URL REDIS_ADDR APPLE_BUNDLE_ID APPLE_KEY_ID APPLE_ISSUER_ID APPLE_PRIVATE_KEY APPLE_ENVIRONMENT" ] && echo 1 || echo 0)
+  $([ "${ENV_REQUIRED_KEYS[notification]}" = "POSTGRES_NOTIFICATION_PASSWORD INTERNAL_SERVICE_TOKEN FIREBASE_PROJECT_ID FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 AUTH_JWKS_URL REDIS_ADDR APPLE_BUNDLE_ID APPLE_KEY_ID APPLE_ISSUER_ID APPLE_PRIVATE_KEY APPLE_ENVIRONMENT" ] && echo 1 || echo 0)
 
 # --- 3. a complete, correctly-permissioned config directory validates
 #     cleanly, service by service and all at once ---

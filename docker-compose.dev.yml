@@ -143,6 +143,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_APIARY_PASSWORD:?set POSTGRES_APIARY_PASSWORD}@apiary-postgres:5432/${APIARY_DB_NAME:-beebase_apiary_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}
       HIVE_SERVICE_URL: http://hive-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
@@ -209,6 +210,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_HIVE_PASSWORD:?set POSTGRES_HIVE_PASSWORD}@hive-postgres:5432/${HIVE_DB_NAME:-beebase_hive_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}
       APIARY_SERVICE_URL: http://apiary-service:8080
       INSPECTION_SERVICE_URL: http://inspection-service:8080
@@ -275,6 +277,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_INSPECTION_PASSWORD:?set POSTGRES_INSPECTION_PASSWORD}@inspection-postgres:5432/${INSPECTION_DB_NAME:-beebase_inspection_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}
       HIVE_SERVICE_URL: http://hive-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
@@ -337,6 +340,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_HARVEST_PASSWORD:?set POSTGRES_HARVEST_PASSWORD}@harvest-postgres:5432/${HARVEST_DB_NAME:-beebase_harvest_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       # Harvest has no ownership data of its own: every operation
       # confirms the caller owns the specified hive by calling
       # hive-service directly, on every request.
@@ -557,6 +561,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_NOTIFICATION_PASSWORD:?set POSTGRES_NOTIFICATION_PASSWORD}@notification-postgres:5432/${NOTIFICATION_DB_NAME:-beebase_notification_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
       FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: ${FIREBASE_SERVICE_ACCOUNT_JSON_BASE64}
       APPLE_BUNDLE_ID: ${APPLE_BUNDLE_ID:-com.beebase.production}

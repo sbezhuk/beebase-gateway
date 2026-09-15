@@ -51,6 +51,7 @@ echo "MARKER=statistics-marker" >"${CONFIG_DIR}/statistics.env"
 echo "MARKER=subscription-marker" >"${CONFIG_DIR}/subscription.env"
 cat >"${CONFIG_DIR}/notification.env" <<'EOF'
 POSTGRES_NOTIFICATION_PASSWORD=notification-pw
+INTERNAL_SERVICE_TOKEN=internal-pw
 FIREBASE_PROJECT_ID=beebase-production
 FIREBASE_SERVICE_ACCOUNT_JSON_BASE64=eyJ0eXBlIjoic2VydmljZV9hY2NvdW50In0=
 AUTH_JWKS_URL=http://auth-service:8080/.well-known/jwks.json
@@ -91,6 +92,7 @@ FAKE_ENV=(
   POSTGRES_MEDIA_PASSWORD=media-pw
   POSTGRES_SUBSCRIPTION_PASSWORD=subscription-pw
   POSTGRES_NOTIFICATION_PASSWORD=notification-pw
+  INTERNAL_SERVICE_TOKEN=internal-pw
 )
 
 # --- 1. config succeeds with every variable set and every service env
