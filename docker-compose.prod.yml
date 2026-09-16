@@ -142,8 +142,6 @@ services:
       SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
       STATISTICS_SERVICE_URL: http://statistics-service:8080
-      SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
-      NOTIFICATION_SERVICE_URL: http://notification-service:8080
     networks: [beebase]
     depends_on:
       auth-service: { condition: service_healthy }
