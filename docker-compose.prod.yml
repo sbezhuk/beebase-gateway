@@ -138,6 +138,8 @@ services:
       HIVE_SERVICE_URL: http://hive-service:8080
       INSPECTION_SERVICE_URL: http://inspection-service:8080
       HARVEST_SERVICE_URL: http://harvest-service:8080
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
       STATISTICS_SERVICE_URL: http://statistics-service:8080
       SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
@@ -189,11 +191,17 @@ services:
       GOMEMLIMIT: 40MiB
       DATABASE_URL: postgres://beebase:${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}@postgres-auth:5432/beebase_auth?sslmode=disable
       REDIS_ADDR: redis:6379
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       ACCESS_TOKEN_TTL: 15m
       REFRESH_TOKEN_TTL: 720h
       TOTP_ISSUER: BeeBase
       MEDIA_SERVICE_URL: http://media-service:8080
       APIARY_SERVICE_URL: http://apiary-service:8080
+      HIVE_SERVICE_URL: http://hive-service:8080
+      INSPECTION_SERVICE_URL: http://inspection-service:8080
+      HARVEST_SERVICE_URL: http://harvest-service:8080
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
     networks: [beebase]
     depends_on:
       postgres-auth: { condition: service_healthy }
@@ -228,6 +236,7 @@ services:
       DATABASE_URL: postgres://beebase:${POSTGRES_APIARY_PASSWORD:?set POSTGRES_APIARY_PASSWORD}@postgres-apiary:5432/beebase_apiary?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       HIVE_SERVICE_URL: http://hive-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
       SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
@@ -270,6 +279,7 @@ services:
       REDIS_ADDR: redis:6379
       APIARY_SERVICE_URL: http://apiary-service:8080
       INSPECTION_SERVICE_URL: http://inspection-service:8080
+      HARVEST_SERVICE_URL: http://harvest-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
       SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
       PUBLIC_BASE_URL: https://${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
@@ -397,6 +407,7 @@ services:
       DATABASE_URL: postgres://beebase:${POSTGRES_MEDIA_PASSWORD:?set POSTGRES_MEDIA_PASSWORD}@postgres-media:5432/beebase_media?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       PUBLIC_BASE_URL: https://${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
       # Media blobs live in Amazon S3. No static access key here,
       # deliberately: the container authenticates to S3 via the EC2
@@ -481,6 +492,7 @@ services:
       DATABASE_URL: postgres://beebase:${POSTGRES_SUBSCRIPTION_PASSWORD:?set POSTGRES_SUBSCRIPTION_PASSWORD}@postgres-subscription:5432/beebase_subscription?sslmode=disable
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       REDIS_ADDR: redis:6379
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
     networks: [beebase]
     depends_on:
       postgres-subscription: { condition: service_healthy }

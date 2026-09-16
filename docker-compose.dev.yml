@@ -83,6 +83,7 @@ services:
       HTTP_PORT: "8080"
       DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_AUTH_PASSWORD:?set POSTGRES_AUTH_PASSWORD}@auth-postgres:5432/${AUTH_DB_NAME:-beebase_auth_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
       ACCESS_TOKEN_TTL: 15m
       REFRESH_TOKEN_TTL: 720h
@@ -90,6 +91,11 @@ services:
       TOTP_ISSUER: ${TOTP_ISSUER:-BeeBase-Dev}
       MEDIA_SERVICE_URL: http://media-service:8080
       APIARY_SERVICE_URL: http://apiary-service:8080
+      HIVE_SERVICE_URL: http://hive-service:8080
+      INSPECTION_SERVICE_URL: http://inspection-service:8080
+      HARVEST_SERVICE_URL: http://harvest-service:8080
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
     depends_on:
       auth-postgres:
         condition: service_healthy
@@ -214,6 +220,7 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}
       APIARY_SERVICE_URL: http://apiary-service:8080
       INSPECTION_SERVICE_URL: http://inspection-service:8080
+      HARVEST_SERVICE_URL: http://harvest-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
       SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
     depends_on:
@@ -402,6 +409,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_MEDIA_PASSWORD:?set POSTGRES_MEDIA_PASSWORD}@media-postgres:5432/${MEDIA_DB_NAME:-beebase_media_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:18080}
       STORAGE_BUCKET: ${STORAGE_BUCKET:-beebase-media-dev}
       STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
@@ -504,6 +512,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-beebase}:${POSTGRES_SUBSCRIPTION_PASSWORD:?set POSTGRES_SUBSCRIPTION_PASSWORD}@subscription-postgres:5432/${SUBSCRIPTION_DB_NAME:-beebase_subscription_dev}?sslmode=disable
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
       APPLE_BUNDLE_ID: ${APPLE_BUNDLE_ID:-com.beebase.production}
       APPLE_ENVIRONMENT: ${APPLE_ENVIRONMENT:-Sandbox}
       GOOGLE_PACKAGE_NAME: ${GOOGLE_PACKAGE_NAME:-com.beebase.production}
