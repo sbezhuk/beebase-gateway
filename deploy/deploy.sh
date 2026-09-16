@@ -211,6 +211,12 @@ TMP_DEPLOY_ENV_FILE="$(mktemp "${CONFIG_DIR}/.deploy.env.XXXXXX")"
     password="$(env_config_read_value "${service_file}" "${password_key}")"
     echo "${password_key}=${password}"
   done
+
+  # The internal credential is shared by the cleanup endpoints. Read it from
+  # the already-authoritative apiary env file so Compose can inject it into
+  # services whose own env files do not participate in interpolation.
+  internal_token="$(env_config_read_value "$(env_config_file_path "${CONFIG_DIR}" apiary)" INTERNAL_SERVICE_TOKEN)"
+  echo "INTERNAL_SERVICE_TOKEN=${internal_token}"
 } >"${TMP_DEPLOY_ENV_FILE}"
 
 log "fetching non-secret global parameters from SSM Parameter Store (${SSM_PATH})"

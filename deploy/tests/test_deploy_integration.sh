@@ -454,6 +454,13 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+if grep -qxF "INTERNAL_SERVICE_TOKEN=fake-internal-token" "${DEPLOY_ROOT}/config/deploy.env"; then
+  echo "PASS: deploy.env mirrors the shared internal service token"
+else
+  echo "FAIL: deploy.env mirrors the shared internal service token"
+  FAIL=$((FAIL + 1))
+fi
+
 # --- 19. a stale/rogue secret (and a stale STORAGE_BUCKET, left over
 #     from before the per-service .env migration) still sitting in SSM
 #     under /beebase/prod is ignored outright: only PUBLIC_DOMAIN is
