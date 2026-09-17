@@ -42,9 +42,13 @@ JWT_PRIVATE_KEY=jwt-key
 TOTP_ENCRYPTION_KEY=totp-key
 EOF
   echo -e "POSTGRES_APIARY_PASSWORD=apiary-pw\nINTERNAL_SERVICE_TOKEN=internal-pw" >"${dir}/apiary.env"
+  echo "NOTIFICATION_SERVICE_URL=http://notification-service:8080" >>"${dir}/apiary.env"
   echo -e "POSTGRES_HIVE_PASSWORD=hive-pw\nINTERNAL_SERVICE_TOKEN=internal-pw" >"${dir}/hive.env"
+  echo "NOTIFICATION_SERVICE_URL=http://notification-service:8080" >>"${dir}/hive.env"
   echo -e "POSTGRES_INSPECTION_PASSWORD=inspection-pw\nINTERNAL_SERVICE_TOKEN=internal-pw" >"${dir}/inspection.env"
+  echo "NOTIFICATION_SERVICE_URL=http://notification-service:8080" >>"${dir}/inspection.env"
   echo -e "POSTGRES_HARVEST_PASSWORD=harvest-pw\nINTERNAL_SERVICE_TOKEN=internal-pw" >"${dir}/harvest.env"
+  echo "NOTIFICATION_SERVICE_URL=http://notification-service:8080" >>"${dir}/harvest.env"
   cat >"${dir}/media.env" <<'EOF'
 POSTGRES_MEDIA_PASSWORD=media-pw
 STORAGE_BUCKET=beebase-prod
@@ -109,14 +113,14 @@ check "each service maps to <service>.env exactly" "${all_names_ok}"
 
 check "auth requires POSTGRES_AUTH_PASSWORD, JWT_PRIVATE_KEY and TOTP_ENCRYPTION_KEY" \
   $([ "${ENV_REQUIRED_KEYS[auth]}" = "POSTGRES_AUTH_PASSWORD JWT_PRIVATE_KEY TOTP_ENCRYPTION_KEY" ] && echo 1 || echo 0)
-check "apiary requires database and internal auth" \
-  $([ "${ENV_REQUIRED_KEYS[apiary]}" = "POSTGRES_APIARY_PASSWORD INTERNAL_SERVICE_TOKEN" ] && echo 1 || echo 0)
-check "hive requires only POSTGRES_HIVE_PASSWORD" \
-  $([ "${ENV_REQUIRED_KEYS[hive]}" = "POSTGRES_HIVE_PASSWORD INTERNAL_SERVICE_TOKEN" ] && echo 1 || echo 0)
-check "inspection requires only POSTGRES_INSPECTION_PASSWORD" \
-  $([ "${ENV_REQUIRED_KEYS[inspection]}" = "POSTGRES_INSPECTION_PASSWORD INTERNAL_SERVICE_TOKEN" ] && echo 1 || echo 0)
-check "harvest requires only POSTGRES_HARVEST_PASSWORD" \
-  $([ "${ENV_REQUIRED_KEYS[harvest]}" = "POSTGRES_HARVEST_PASSWORD INTERNAL_SERVICE_TOKEN" ] && echo 1 || echo 0)
+check "apiary requires database, internal auth, and notification URL" \
+  $([ "${ENV_REQUIRED_KEYS[apiary]}" = "POSTGRES_APIARY_PASSWORD INTERNAL_SERVICE_TOKEN NOTIFICATION_SERVICE_URL" ] && echo 1 || echo 0)
+check "hive requires its database, internal auth, and notification URL" \
+  $([ "${ENV_REQUIRED_KEYS[hive]}" = "POSTGRES_HIVE_PASSWORD INTERNAL_SERVICE_TOKEN NOTIFICATION_SERVICE_URL" ] && echo 1 || echo 0)
+check "inspection requires database, internal auth, and notification URL" \
+  $([ "${ENV_REQUIRED_KEYS[inspection]}" = "POSTGRES_INSPECTION_PASSWORD INTERNAL_SERVICE_TOKEN NOTIFICATION_SERVICE_URL" ] && echo 1 || echo 0)
+check "harvest requires database, internal auth, and notification URL" \
+  $([ "${ENV_REQUIRED_KEYS[harvest]}" = "POSTGRES_HARVEST_PASSWORD INTERNAL_SERVICE_TOKEN NOTIFICATION_SERVICE_URL" ] && echo 1 || echo 0)
 check "media requires POSTGRES_MEDIA_PASSWORD and STORAGE_BUCKET" \
   $([ "${ENV_REQUIRED_KEYS[media]}" = "POSTGRES_MEDIA_PASSWORD STORAGE_BUCKET" ] && echo 1 || echo 0)
 check "gateway requires no production secret" \
