@@ -143,6 +143,12 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	r.Mount("/api/v1/hives/{hiveId}/harvest", http.NotFoundHandler())
 	r.Mount("/api/v1/hives/{hiveId}/harvests", up.Harvest)
 
+	// Queen endpoints are owned by hive-service. Keep these mounts ahead of
+	// the broader /api/v1/hives mount so every Queen path in the Hive API is
+	// explicitly routed to the Hive upstream.
+	r.Get("/api/v1/hives/{hiveId}/queen", up.Hive.ServeHTTP)
+	r.Mount("/api/v1/hives/{hiveId}/queens", up.Hive)
+
 	r.Mount("/api/v1/hives", blockInternalOnly(up.Hive, methodPath{http.MethodDelete, "/api/v1/hives"}))
 	r.Mount("/api/v1/media", blockInternalOnly(up.Media,
 		methodPath{http.MethodDelete, "/api/v1/media"},
