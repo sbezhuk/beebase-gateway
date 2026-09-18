@@ -131,6 +131,10 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	// service's endpoint, not hive-service's, even though it's nested
 	// under /hives/.
 	r.Get("/api/v1/hives/{hiveId}/inspections", up.Inspection.ServeHTTP)
+	// Colony Health is computed by inspection-service from the hive's
+	// inspection history, not by hive-service. Keep this route ahead of the
+	// broader /api/v1/hives mount for the same reason as the inspections list.
+	r.Get("/api/v1/hives/{hiveId}/health", up.Inspection.ServeHTTP)
 
 	// Same reasoning as the inspections route above: harvest records
 	// nested under a hive are harvest-service's endpoints, not
