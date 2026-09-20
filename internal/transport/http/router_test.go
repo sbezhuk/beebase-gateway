@@ -206,6 +206,64 @@ func TestHarvestRoutesDoNotReachHiveService(t *testing.T) {
 	}
 }
 
+// TestHealthHistoryRouteReachesInspectionServiceNotHive proves the new
+// GET /api/v1/hives/{hiveId}/health/history route is proxied to
+// inspection-service - the service that owns Colony Health, computed from
+// inspection history - and never falls through to hive-service's own
+// broader /api/v1/hives mount, the same routing precedence concern
+// TestHarvestRoutesDoNotReachHiveService already covers for harvests.
+func TestHealthHistoryRouteReachesInspectionServiceNotHive(t *testing.T) {
+	inspection := &stubUpstream{}
+	hive := &stubUpstream{}
+	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), Upstreams{
+		Auth: &stubUpstream{}, Apiary: &stubUpstream{}, Hive: hive, Inspection: inspection,
+		Harvest: &stubUpstream{}, Media: &stubUpstream{}, Statistics: &stubUpstream{}, Subscription: &stubUpstream{},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/health/history?from=2026-01-01&to=2026-01-02", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if hive.called {
+		t.Error("health/history route reached hive-service; it must be routed to inspection-service instead")
+	}
+	if !inspection.called {
+		t.Error("health/history route did not reach inspection-service")
+	}
+}
+
+// TestHealthAndHealthHistoryRoutesDoNotConflict proves the new, longer
+// "/health/history" static route and the existing "/health" route
+// coexist without either shadowing the other - chi resolves both as
+// distinct exact paths, not a wildcard match.
+func TestHealthAndHealthHistoryRoutesDoNotConflict(t *testing.T) {
+	inspection := &stubUpstream{}
+	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), Upstreams{
+		Auth: &stubUpstream{}, Apiary: &stubUpstream{}, Hive: &stubUpstream{}, Inspection: inspection,
+		Harvest: &stubUpstream{}, Media: &stubUpstream{}, Statistics: &stubUpstream{}, Subscription: &stubUpstream{},
+	})
+
+	for _, path := range []string{
+		"/api/v1/hives/11111111-1111-1111-1111-111111111111/health",
+		"/api/v1/hives/11111111-1111-1111-1111-111111111111/health/history?from=2026-01-01&to=2026-01-02",
+	} {
+		inspection.called = false
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("path %s: status = %d, want 200", path, rec.Code)
+		}
+		if !inspection.called {
+			t.Fatalf("path %s: did not reach inspection-service", path)
+		}
+	}
+}
+
 func TestLegacySingularHarvestRouteDoesNotProxy(t *testing.T) {
 	router, _, _, _, hive, harvest, _, _ := newTestRouter()
 

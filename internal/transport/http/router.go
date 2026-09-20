@@ -135,6 +135,10 @@ func NewRouter(log *slog.Logger, up Upstreams) http.Handler {
 	// inspection history, not by hive-service. Keep this route ahead of the
 	// broader /api/v1/hives mount for the same reason as the inspections list.
 	r.Get("/api/v1/hives/{hiveId}/health", up.Inspection.ServeHTTP)
+	// Pro-only Colony Health history, also computed by inspection-service.
+	// A distinct, more specific static path from "/health" above - chi
+	// resolves both exactly, with no ambiguity between them.
+	r.Get("/api/v1/hives/{hiveId}/health/history", up.Inspection.ServeHTTP)
 
 	// Same reasoning as the inspections route above: harvest records
 	// nested under a hive are harvest-service's endpoints, not
