@@ -320,6 +320,7 @@ services:
       REDIS_ADDR: redis:6379
       HIVE_SERVICE_URL: http://hive-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
       PUBLIC_BASE_URL: https://${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
     networks: [beebase]
     depends_on:
@@ -327,6 +328,7 @@ services:
       auth-service: { condition: service_healthy }
       hive-service: { condition: service_healthy }
       media-service: { condition: service_healthy }
+      subscription-service: { condition: service_healthy }
       redis: { condition: service_healthy }
       migrate-inspection: { condition: service_completed_successfully }
     healthcheck:
