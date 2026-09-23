@@ -453,6 +453,8 @@ services:
       HIVE_SERVICE_URL: http://hive-service:8080
       INSPECTION_SERVICE_URL: http://inspection-service:8080
       HARVEST_SERVICE_URL: http://harvest-service:8080
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
     networks: [beebase]
     depends_on:
       auth-service: { condition: service_healthy }
