@@ -54,11 +54,11 @@ declare -gA ENV_TEMPLATE_NAME=(
 # deploy.sh will deploy. Values must never be logged: some are secrets,
 # and the rest are validated through the same redacted path so production
 # configuration stays quiet and uniform.
-# gateway and statistics-service currently need none: every variable
-# they read is either optional or supplied by docker-compose.prod.yml's
-# `environment:` block (network topology owned by compose - see
-# requirement 11). Both still get their own (near-empty) file so the
-# architecture stays uniform and ready for a future secret.
+# gateway still needs none: every variable it reads is either optional or
+# supplied by docker-compose.prod.yml's `environment:` block. Statistics has
+# one shared internal credential, also supplied by Compose from deploy.env;
+# its own file remains present for the uniform per-service configuration
+# validation flow.
 declare -gA ENV_REQUIRED_KEYS=(
   [gateway]=""
   [auth]="POSTGRES_AUTH_PASSWORD JWT_PRIVATE_KEY TOTP_ENCRYPTION_KEY"

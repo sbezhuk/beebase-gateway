@@ -76,6 +76,8 @@ services:
   auth-service:
     build:
       context: ../beebase-auth-service
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -141,6 +143,8 @@ services:
   apiary-service:
     build:
       context: ../beebase-apiary-service
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -346,6 +350,8 @@ services:
   harvest-service:
     build:
       context: ../beebase-harvest-service
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -409,6 +415,8 @@ services:
   media-service:
     build:
       context: ../beebase-media-service
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -512,6 +520,8 @@ services:
   subscription-service:
     build:
       context: ../beebase-subscription-service
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -521,6 +531,7 @@ services:
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
+      PRO_ENTITLEMENT_ALLOWLIST: ${PRO_ENTITLEMENT_ALLOWLIST:-}
       APPLE_BUNDLE_ID: ${APPLE_BUNDLE_ID:-com.beebase.production}
       APPLE_ENVIRONMENT: ${APPLE_ENVIRONMENT:-Sandbox}
       GOOGLE_PACKAGE_NAME: ${GOOGLE_PACKAGE_NAME:-com.beebase.production}
@@ -570,6 +581,8 @@ services:
   notification-service:
     build:
       context: ../beebase-notification-service
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -601,6 +614,8 @@ services:
   gateway:
     build:
       context: .
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}

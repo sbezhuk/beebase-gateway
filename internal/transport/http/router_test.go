@@ -206,18 +206,16 @@ func TestHarvestRoutesDoNotReachHiveService(t *testing.T) {
 	}
 }
 
-// TestHealthHistoryRouteReachesInspectionServiceNotHive proves the new
-// GET /api/v1/hives/{hiveId}/health/history route is proxied to
-// inspection-service - the service that owns Colony Health, computed from
-// inspection history - and never falls through to hive-service's own
-// broader /api/v1/hives mount, the same routing precedence concern
-// TestHarvestRoutesDoNotReachHiveService already covers for harvests.
-func TestHealthHistoryRouteReachesInspectionServiceNotHive(t *testing.T) {
+// TestHealthHistoryRouteReachesStatisticsServiceNotHive proves the public
+// history route is proxied to statistics-service and never falls through to
+// hive-service's broader /api/v1/hives mount.
+func TestHealthHistoryRouteReachesStatisticsServiceNotHive(t *testing.T) {
 	inspection := &stubUpstream{}
 	hive := &stubUpstream{}
+	statistics := &stubUpstream{}
 	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), Upstreams{
 		Auth: &stubUpstream{}, Apiary: &stubUpstream{}, Hive: hive, Inspection: inspection,
-		Harvest: &stubUpstream{}, Media: &stubUpstream{}, Statistics: &stubUpstream{}, Subscription: &stubUpstream{},
+		Harvest: &stubUpstream{}, Media: &stubUpstream{}, Statistics: statistics, Subscription: &stubUpstream{},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/hives/11111111-1111-1111-1111-111111111111/health/history?from=2026-01-01&to=2026-01-02", nil)
@@ -228,10 +226,13 @@ func TestHealthHistoryRouteReachesInspectionServiceNotHive(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 	if hive.called {
-		t.Error("health/history route reached hive-service; it must be routed to inspection-service instead")
+		t.Error("health/history route reached hive-service; it must be routed to statistics-service instead")
 	}
-	if !inspection.called {
-		t.Error("health/history route did not reach inspection-service")
+	if inspection.called {
+		t.Error("health/history route reached inspection-service; it must be routed to statistics-service")
+	}
+	if !statistics.called {
+		t.Error("health/history route did not reach statistics-service")
 	}
 }
 
@@ -241,25 +242,34 @@ func TestHealthHistoryRouteReachesInspectionServiceNotHive(t *testing.T) {
 // distinct exact paths, not a wildcard match.
 func TestHealthAndHealthHistoryRoutesDoNotConflict(t *testing.T) {
 	inspection := &stubUpstream{}
+	statistics := &stubUpstream{}
 	r := NewRouter(slog.New(slog.NewTextHandler(io.Discard, nil)), Upstreams{
 		Auth: &stubUpstream{}, Apiary: &stubUpstream{}, Hive: &stubUpstream{}, Inspection: inspection,
-		Harvest: &stubUpstream{}, Media: &stubUpstream{}, Statistics: &stubUpstream{}, Subscription: &stubUpstream{},
+		Harvest: &stubUpstream{}, Media: &stubUpstream{}, Statistics: statistics, Subscription: &stubUpstream{},
 	})
 
-	for _, path := range []string{
-		"/api/v1/hives/11111111-1111-1111-1111-111111111111/health",
-		"/api/v1/hives/11111111-1111-1111-1111-111111111111/health/history?from=2026-01-01&to=2026-01-02",
+	for _, test := range []struct {
+		path           string
+		wantInspection bool
+		wantStatistics bool
+	}{
+		{path: "/api/v1/hives/11111111-1111-1111-1111-111111111111/health", wantInspection: true},
+		{path: "/api/v1/hives/11111111-1111-1111-1111-111111111111/health/history?from=2026-01-01&to=2026-01-02", wantStatistics: true},
 	} {
 		inspection.called = false
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		statistics.called = false
+		req := httptest.NewRequest(http.MethodGet, test.path, nil)
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Fatalf("path %s: status = %d, want 200", path, rec.Code)
+			t.Fatalf("path %s: status = %d, want 200", test.path, rec.Code)
 		}
-		if !inspection.called {
-			t.Fatalf("path %s: did not reach inspection-service", path)
+		if inspection.called != test.wantInspection {
+			t.Fatalf("path %s: inspection called = %v, want %v", test.path, inspection.called, test.wantInspection)
+		}
+		if statistics.called != test.wantStatistics {
+			t.Fatalf("path %s: statistics called = %v, want %v", test.path, statistics.called, test.wantStatistics)
 		}
 	}
 }
