@@ -531,6 +531,7 @@ services:
       REDIS_ADDR: redis:6379
       AUTH_JWKS_URL: http://auth-service:8080/.well-known/jwks.json
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
+      PRO_ENTITLEMENT_ALLOWLIST: ${PRO_ENTITLEMENT_ALLOWLIST:-}
       APPLE_BUNDLE_ID: ${APPLE_BUNDLE_ID:-com.beebase.production}
       APPLE_ENVIRONMENT: ${APPLE_ENVIRONMENT:-Sandbox}
       GOOGLE_PACKAGE_NAME: ${GOOGLE_PACKAGE_NAME:-com.beebase.production}
