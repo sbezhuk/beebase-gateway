@@ -36,10 +36,10 @@ POSTGRES_AUTH_PASSWORD=fake-auth-pw
 JWT_PRIVATE_KEY=fake-jwt-key
 TOTP_ENCRYPTION_KEY=fake-totp-key
 EOF
-  echo -e "POSTGRES_APIARY_PASSWORD=fake-apiary-pw\nINTERNAL_SERVICE_TOKEN=fake-internal-token" >"${dir}/apiary.env"
-  echo -e "POSTGRES_HIVE_PASSWORD=fake-hive-pw\nINTERNAL_SERVICE_TOKEN=fake-internal-token" >"${dir}/hive.env"
-  echo -e "POSTGRES_INSPECTION_PASSWORD=fake-inspection-pw\nINTERNAL_SERVICE_TOKEN=fake-internal-token" >"${dir}/inspection.env"
-  echo -e "POSTGRES_HARVEST_PASSWORD=fake-harvest-pw\nINTERNAL_SERVICE_TOKEN=fake-internal-token" >"${dir}/harvest.env"
+  echo -e "POSTGRES_APIARY_PASSWORD=fake-apiary-pw\nINTERNAL_SERVICE_TOKEN=fake-internal-token\nNOTIFICATION_SERVICE_URL=http://notification-service:8080" >"${dir}/apiary.env"
+  echo -e "POSTGRES_HIVE_PASSWORD=fake-hive-pw\nINTERNAL_SERVICE_TOKEN=fake-internal-token\nNOTIFICATION_SERVICE_URL=http://notification-service:8080" >"${dir}/hive.env"
+  echo -e "POSTGRES_INSPECTION_PASSWORD=fake-inspection-pw\nINTERNAL_SERVICE_TOKEN=fake-internal-token\nNOTIFICATION_SERVICE_URL=http://notification-service:8080" >"${dir}/inspection.env"
+  echo -e "POSTGRES_HARVEST_PASSWORD=fake-harvest-pw\nINTERNAL_SERVICE_TOKEN=fake-internal-token\nNOTIFICATION_SERVICE_URL=http://notification-service:8080" >"${dir}/harvest.env"
   cat >"${dir}/media.env" <<'EOF'
 POSTGRES_MEDIA_PASSWORD=fake-media-pw
 STORAGE_BUCKET=fake-bucket

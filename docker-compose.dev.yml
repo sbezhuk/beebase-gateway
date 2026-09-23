@@ -76,6 +76,8 @@ services:
   auth-service:
     build:
       context: ../beebase-auth-service
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -141,6 +143,8 @@ services:
   apiary-service:
     build:
       context: ../beebase-apiary-service
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -346,6 +350,8 @@ services:
   harvest-service:
     build:
       context: ../beebase-harvest-service
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -409,6 +415,8 @@ services:
   media-service:
     build:
       context: ../beebase-media-service
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -512,6 +520,8 @@ services:
   subscription-service:
     build:
       context: ../beebase-subscription-service
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -570,6 +580,8 @@ services:
   notification-service:
     build:
       context: ../beebase-notification-service
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -601,6 +613,8 @@ services:
   gateway:
     build:
       context: .
+      secrets:
+        - github_token
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
