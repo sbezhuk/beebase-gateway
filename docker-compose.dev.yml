@@ -97,6 +97,7 @@ services:
       INSPECTION_SERVICE_URL: http://inspection-service:8080
       HARVEST_SERVICE_URL: http://harvest-service:8080
       NOTIFICATION_SERVICE_URL: http://notification-service:8080
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
     depends_on:
       auth-postgres:
         condition: service_healthy
@@ -295,7 +296,6 @@ services:
       HIVE_SERVICE_URL: http://hive-service:8080
       MEDIA_SERVICE_URL: http://media-service:8080
       NOTIFICATION_SERVICE_URL: http://notification-service:8080
-      SUBSCRIPTION_SERVICE_URL: http://subscription-service:8080
     depends_on:
       inspection-postgres:
         condition: service_healthy
